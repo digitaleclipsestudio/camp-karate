@@ -112,7 +112,7 @@ export async function POST(request) {
       paymentIntent = await stripe.paymentIntents.create({
         amount:       Math.round(amount * 100),
         currency:     "cad",
-        automatic_payment_methods: { enabled: true },
+        payment_method_types: ["card"],
         receipt_email: customerEmail || undefined,
         description:  description || "Camp de Jour Karaté — Été 2026",
         metadata: {
