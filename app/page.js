@@ -209,7 +209,7 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
         />
       </div>
       <div className="security-note">
-        🔒 Paiement sécurisé par Stripe — Chiffrement SSL 256 bits
+        🔒 Paiement sécurisé par Stripe
       </div>
       <div className="btn-row">
         <button type="button" className="btn btn-secondary" onClick={onBack} disabled={loading}>
@@ -1321,9 +1321,8 @@ export default function CampKarate() {
                     Confirmation en attente
                   </div>
                   <div style={{ color: "#666", fontWeight: 600, fontSize: "0.92rem", maxWidth: 420, margin: "0 auto 24px", lineHeight: 1.7 }}>
-                    Votre paiement a été accepté par Stripe, mais la confirmation d'inscription n'a pas encore été reçue.
-                    Vérifiez votre courriel <strong>{tutor.courriel}</strong> dans les prochaines minutes.
-                    Si vous ne recevez rien, contactez-nous avec l'identifiant : <code style={{ background: "#f5f5f5", padding: "2px 8px", borderRadius: 6 }}>{paymentIntentId}</code>
+                    Votre paiement a été accepté, mais la confirmation d'inscription n'a pas encore été reçue.
+                    Identifiant : <code style={{ background: "#f5f5f5", padding: "2px 8px", borderRadius: 6 }}>{paymentIntentId}</code>
                   </div>
                   <button type="button" className="btn btn-secondary" onClick={() => {
                     setPollStatus("waiting");
