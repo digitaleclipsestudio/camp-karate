@@ -32,8 +32,8 @@ const newChild = () => ({
   tdah: false, tourette: false, tsa: false, asthme: false, rien: false, autres: "", scolarise: false,
 });
 
-const priceFor   = (index) => PRICE_BY_RANK[Math.min(index, PRICE_BY_RANK.length - 1)];
-const fmt        = (n) => n.toFixed(2);
+const priceFor = (index) => PRICE_BY_RANK[Math.min(index, PRICE_BY_RANK.length - 1)];
+const fmt      = (n) => n.toFixed(2);
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styleTag = `
@@ -140,7 +140,8 @@ const styleTag = `
   .confetti-area { text-align: center; padding: 20px 0 32px; }
   .confetti-emoji { font-size: 4rem; margin-bottom: 16px; animation: bounce 1s ease infinite; }
   @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-  .confirm-title { font-family: 'Fredoka One', cursive; font-size: 2rem; color: #1a0000; margin-bottom: 8px; }
+  .confirm-title { font-family: 'Fredoka One', cursive; font-size: 2rem; color: #1a0000; margin-bottom: 6px; }
+  .confirm-dojo  { font-family: 'Fredoka One', cursive; font-size: 1.1rem; color: #CC0000; margin-bottom: 8px; }
   .confirm-sub   { color: #888; font-size: 1rem; font-weight: 600; margin-bottom: 32px; }
   .confirm-summary { background: #fffbe6; border: 2px solid #FFD700; border-radius: 16px; padding: 24px; margin-bottom: 24px; }
   .confirm-row   { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1.5px dashed #ffe066; font-size: 0.95rem; }
@@ -167,11 +168,9 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
 
   const handlePay = async () => {
     if (!stripe || !elements) return;
-
     setStripeError(null);
     setLoading(true);
 
-    // Valide le formulaire Stripe côté client
     const { error: submitError } = await elements.submit();
     if (submitError) {
       setStripeError(submitError.message);
@@ -179,7 +178,6 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
       return;
     }
 
-    // Confirme le paiement — Stripe charge la carte
     const { paymentIntent, error: confirmError } = await stripe.confirmPayment({
       elements,
       redirect: "if_required",
@@ -191,15 +189,12 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
       return;
     }
 
-    // Paiement Stripe OK → passer le PI id (issu de confirmPayment) au parent
     onSuccess(paymentIntent?.id);
   };
 
   return (
     <>
-      {stripeError && (
-        <div className="stripe-error">⚠️ {stripeError}</div>
-      )}
+      {stripeError && <div className="stripe-error">⚠️ {stripeError}</div>}
       <div className="stripe-wrapper">
         <PaymentElement
           options={{
@@ -208,9 +203,7 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
           }}
         />
       </div>
-      <div className="security-note">
-        🔒 Paiement sécurisé par Stripe
-      </div>
+      <div className="security-note">🔒 Paiement sécurisé par Stripe</div>
       <div className="btn-row">
         <button type="button" className="btn btn-secondary" onClick={onBack} disabled={loading}>
           ← Retour
@@ -239,16 +232,12 @@ export default function CampKarate() {
   const [dbWeeks, setDbWeeks]   = useState(null);
   const [weeksError, setWeeksError] = useState(null);
   const [confNum, setConfNum]               = useState("");
-  const [paymentIntentId, setPaymentIntentId] = useState(null); // reçu du serveur, jamais splitté
-  const [pollStatus, setPollStatus]         = useState("waiting"); // waiting | confirmed | failed
-  const [pollTrigger, setPollTrigger]       = useState(0); // incrémenté pour relancer le polling
-  const [retryTrigger, setRetryTrigger]     = useState(0); // incrémenté pour relancer create-payment-intent
-  // Token unique par tentative de paiement — généré à l'arrivée step 5, stable pendant tout le checkout.
-  // Envoyé au serveur pour garantir l'idempotence : un retry réseau réutilise la même réservation.
+  const [paymentIntentId, setPaymentIntentId] = useState(null);
+  const [pollStatus, setPollStatus]         = useState("waiting");
+  const [pollTrigger, setPollTrigger]       = useState(0);
+  const [retryTrigger, setRetryTrigger]     = useState(0);
   const [checkoutToken, setCheckoutToken]   = useState(null);
-
-  // Stripe : clientSecret + paymentIntentId obtenus depuis l'API route
-  const [clientSecret, setClientSecret] = useState(null);
+  const [clientSecret, setClientSecret]     = useState(null);
   const [clientSecretError, setClientSecretError] = useState(null);
 
   const [tutor, setTutor] = useState({
@@ -262,49 +251,36 @@ export default function CampKarate() {
     tshirts: [{ want: false, size: "", type: "", size2: "", type2: "", qty: 1 }],
   });
 
-  // ─── Calculs prix ────────────────────────────────────────────────────────
-  const totalPerChild    = children.map((_, i) => selectedWeeks.length * priceFor(i));
-  const subTotal         = totalPerChild.reduce((a, b) => a + b, 0);
-  const nbGiftedShirts   = selectedWeeks.length >= 2 ? children.length : 0;
-  const nbPaidShirts     = extras.tshirts.filter(t => t.want).reduce((sum, t) => sum + (t.qty || 1), 0);
-  const tshirtSousTotal  = nbPaidShirts * TSHIRT_PRICE;
-  const tshirtTPS        = nbPaidShirts * TSHIRT_TPS;
-  const tshirtTVQ        = nbPaidShirts * TSHIRT_TVQ;
-  const tshirtTotal      = nbPaidShirts * TSHIRT_TOTAL;
-  const nbTshirts        = nbGiftedShirts + nbPaidShirts;
-  const total            = subTotal + tshirtTotal;
+  // ─── Calculs prix ──────────────────────────────────────────────────────────
+  const totalPerChild   = children.map((_, i) => selectedWeeks.length * priceFor(i));
+  const subTotal        = totalPerChild.reduce((a, b) => a + b, 0);
+  const nbGiftedShirts  = selectedWeeks.length >= 2 ? children.length : 0;
+  const nbPaidShirts    = extras.tshirts.filter(t => t.want).reduce((sum, t) => sum + (t.qty || 1), 0);
+  const tshirtSousTotal = nbPaidShirts * TSHIRT_PRICE;
+  const tshirtTPS       = nbPaidShirts * TSHIRT_TPS;
+  const tshirtTVQ       = nbPaidShirts * TSHIRT_TVQ;
+  const tshirtTotal     = nbPaidShirts * TSHIRT_TOTAL;
+  const nbTshirts       = nbGiftedShirts + nbPaidShirts;
+  const total           = subTotal + tshirtTotal;
 
-  // ─── Chargement semaines ─────────────────────────────────────────────────
+  // ─── Chargement semaines ───────────────────────────────────────────────────
   const loadWeeks = async () => {
     const { data, error } = await supabase
       .from("week_availability")
       .select("*")
       .order("starts_on", { ascending: true });
-    if (error) {
-      setWeeksError(error.message);
-      setDbWeeks([]);
-      return;
-    }
+    if (error) { setWeeksError(error.message); setDbWeeks([]); return; }
     setWeeksError(null);
     setDbWeeks(data || []);
   };
 
   useEffect(() => { loadWeeks(); }, []);
+  useEffect(() => { setLoading(false); }, [step]);
 
-  // ─── Reset loading à chaque changement d'étape ──────────────────────────
-  useEffect(() => {
-    setLoading(false);
-  }, [step]);
-
-  // ─── Obtenir le clientSecret Stripe quand on arrive à l'étape paiement ──
+  // ─── ClientSecret Stripe à l'étape paiement ───────────────────────────────
   useEffect(() => {
     if (step !== 5) return;
-    // Pas de guard "if (clientSecret) return" ici —
-    // retryTrigger doit pouvoir relancer même si un clientSecret précédent existait
 
-    // Générer le checkoutToken une seule fois par session de paiement.
-    // Un retry réseau ou un clic "Réessayer" conserve le même token → pas de doublon.
-    // Un vrai abandon + retour à l'étape 5 génère un nouveau token.
     const token = checkoutToken ?? crypto.randomUUID();
     if (!checkoutToken) setCheckoutToken(token);
 
@@ -320,13 +296,13 @@ export default function CampKarate() {
             customerEmail: tutor.courriel,
             description: `Camp Karaté Été 2026 — ${children.map(c => `${c.firstName} ${c.lastName}`).join(", ")}`,
             reservationPayload,
-            checkoutToken: token, // identifiant stable pour idempotence serveur
+            checkoutToken: token,
           }),
         });
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || "Erreur serveur");
         setClientSecret(data.clientSecret);
-        setPaymentIntentId(data.paymentIntentId); // propre — vient du serveur
+        setPaymentIntentId(data.paymentIntentId);
       } catch (err) {
         console.error("PaymentIntent error:", err);
         setClientSecretError("Impossible d'initialiser le paiement. Veuillez réessayer.");
@@ -336,17 +312,17 @@ export default function CampKarate() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, retryTrigger]);
 
-  // ─── Polling après paiement Stripe : attend que le webhook confirme ──────
+  // ─── Polling confirmation webhook ─────────────────────────────────────────
   useEffect(() => {
     if (step !== 6 || !paymentIntentId) return;
     if (pollStatus === "confirmed" || pollStatus === "failed") return;
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 24; // 24 × 2.5s = 60s max
+    const MAX_ATTEMPTS = 24;
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/reservation-status?pi=${paymentIntentId}`);
+        const res  = await fetch(`/api/reservation-status?pi=${paymentIntentId}`);
         const data = await res.json();
         if (data.status === "confirmed") {
           setConfNum(data.reservation_number || "");
@@ -356,12 +332,8 @@ export default function CampKarate() {
           setPollStatus("failed");
         } else {
           attempts++;
-          if (attempts < MAX_ATTEMPTS) {
-            setTimeout(poll, 2500);
-          } else {
-            // Timeout : on accepte quand même (le webhook peut arriver en retard)
-            setPollStatus("failed");
-          }
+          if (attempts < MAX_ATTEMPTS) setTimeout(poll, 2500);
+          else setPollStatus("failed");
         }
       } catch {
         attempts++;
@@ -369,12 +341,11 @@ export default function CampKarate() {
         else setPollStatus("failed");
       }
     };
-
     poll();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, paymentIntentId, pollTrigger]);
 
-  // ─── Helpers semaines ────────────────────────────────────────────────────
+  // ─── Helpers semaines ──────────────────────────────────────────────────────
   const weeksSource   = dbWeeks ?? [];
   const getWeekById   = (id) => weeksSource.find(w => String(w.id) === String(id));
   const getBooked     = (w) => typeof w?.booked_children === "number" ? w.booked_children : (w?.booked ?? 0);
@@ -383,8 +354,8 @@ export default function CampKarate() {
 
   const formatWeekDates = (w) => {
     if (w?.starts_on && w?.ends_on) {
-      const s = new Date(w.starts_on + "T12:00:00");
-      const e = new Date(w.ends_on   + "T12:00:00");
+      const s    = new Date(w.starts_on + "T12:00:00");
+      const e    = new Date(w.ends_on   + "T12:00:00");
       const sStr = s.toLocaleDateString("fr-CA", { day: "numeric", month: "long" });
       const eStr = e.toLocaleDateString("fr-CA", { day: "numeric", month: "long", year: "numeric" });
       return `${sStr} – ${eStr}`;
@@ -392,7 +363,7 @@ export default function CampKarate() {
     return w?.dates_text || w?.dates || "";
   };
 
-  // ─── Gestion enfants ─────────────────────────────────────────────────────
+  // ─── Gestion enfants ───────────────────────────────────────────────────────
   const updateChild = (idx, field, val) => {
     setChildren(prev => prev.map((c, i) => {
       if (i !== idx) return c;
@@ -406,10 +377,7 @@ export default function CampKarate() {
 
   const addChild = () => {
     const newCount = children.length + 1;
-    const blocked = selectedWeeks.some(id => {
-      const w = getWeekById(id);
-      return w && getAvailable(w) < newCount;
-    });
+    const blocked  = selectedWeeks.some(id => { const w = getWeekById(id); return w && getAvailable(w) < newCount; });
     if (blocked) return;
     setChildren(c => [...c, newChild()]);
     setExtras(e => ({ ...e, tshirts: [...e.tshirts, { want: false, size: "", type: "", size2: "", type2: "", qty: 1 }] }));
@@ -425,7 +393,7 @@ export default function CampKarate() {
     setExtras(e => ({ ...e, tshirts: e.tshirts.map((t, i) => i === idx ? { ...t, [field]: val } : t) }));
 
   const toggleWeek = (id) => {
-    const week = getWeekById(id);
+    const week      = getWeekById(id);
     if (!week) return;
     const available = getAvailable(week);
     if (available <= 0) return;
@@ -433,7 +401,7 @@ export default function CampKarate() {
     setSel(prev => prev.includes(id) ? prev.filter(w => w !== id) : [...prev, id]);
   };
 
-  // ─── Validations ─────────────────────────────────────────────────────────
+  // ─── Validations ───────────────────────────────────────────────────────────
   const normalizePhone = (v) => {
     let d = v.replace(/\D/g, "");
     if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
@@ -458,16 +426,16 @@ export default function CampKarate() {
       const w = getWeekById(id);
       return w && getAvailable(w) < children.length;
     });
-    if (overbooked.length > 0) {
+    if (overbooked.length > 0)
       e.spots = `Places insuffisantes pour ${children.length} enfants : ${overbooked.map(id => getWeekById(id)?.label).join(", ")}`;
-    }
+
     children.forEach((c, i) => {
       if (!c.firstName.trim()) e[`fn${i}`]   = "Requis";
       if (!c.lastName.trim())  e[`ln${i}`]   = "Requis";
       const age = parseInt(c.age);
       if (c.age === "" || c.age === null || c.age === undefined) e[`age${i}`] = "Requis";
-      else if (isNaN(age) || age < 5) e[`age${i}`] = "Âge minimum : 5 ans";
-      else if (age > 17)              e[`age${i}`] = "Âge maximum : 17 ans";
+      else if (isNaN(age) || age < 5)  e[`age${i}`] = "Âge minimum : 5 ans";
+      else if (age > 17)               e[`age${i}`] = "Âge maximum : 17 ans";
       if (!c.sex)              e[`sx${i}`]   = "Requis";
       if (!c.ramq.trim())      e[`ramq${i}`] = "Requis";
       else if (!/^[A-Za-z]{4}\d{8}$/.test(c.ramq.replace(/\s/g, ""))) e[`ramq${i}`] = "Format : ABCD 0000 0000";
@@ -482,9 +450,8 @@ export default function CampKarate() {
         e[`dob${i}`] = "Jour invalide (01-31)";
       } else {
         const testDate = new Date(dobA, dobM - 1, dobJ);
-        if (testDate.getFullYear() !== dobA || testDate.getMonth() !== dobM - 1 || testDate.getDate() !== dobJ) {
+        if (testDate.getFullYear() !== dobA || testDate.getMonth() !== dobM - 1 || testDate.getDate() !== dobJ)
           e[`dob${i}`] = "Date invalide";
-        }
       }
       if (!c.medication.trim()) e[`med${i}`] = "Requis";
       if (!c.allergies.trim())  e[`all${i}`] = "Requis";
@@ -519,8 +486,8 @@ export default function CampKarate() {
     if (extras.photo === null)    e.photo     = "Requis";
     if (!extras.signature.trim()) e.signature = "Requis";
     extras.tshirts.forEach((t, i) => {
-      if (selectedWeeks.length >= 2 && !t.size) e[`giftSize${i}`] = "Taille requise";
-      if (selectedWeeks.length >= 2 && !t.type) e[`giftType${i}`] = "Type requis";
+      if (selectedWeeks.length >= 2 && !t.size)  e[`giftSize${i}`]  = "Taille requise";
+      if (selectedWeeks.length >= 2 && !t.type)  e[`giftType${i}`]  = "Type requis";
       if (t.want && !t.size2) e[`extraSize${i}`] = "Taille requise";
       if (t.want && !t.type2) e[`extraType${i}`] = "Type requis";
     });
@@ -535,10 +502,10 @@ export default function CampKarate() {
     return Object.keys(e).length === 0;
   };
 
-  // ─── Payload Supabase ─────────────────────────────────────────────────────
+  // ─── Payload Supabase ──────────────────────────────────────────────────────
   const buildReservationPayload = () => {
     const tshirtsPayload = children.flatMap((c, i) => {
-      const t = extras.tshirts[i];
+      const t    = extras.tshirts[i];
       const rows = [];
       if (selectedWeeks.length >= 2) {
         rows.push({
@@ -562,41 +529,53 @@ export default function CampKarate() {
       pay_method: "full",
       status: "pending_payment",
       tutor: {
-        nom1: tutor.nom1, nom2: tutor.nom2, recu: tutor.recu,
-        recuNom: tutor.recuNom, nas: tutor.nas,
-        adresse: tutor.adresse, ville: tutor.ville, cp: tutor.cp,
-        tel1: tutor.tel1, tel2: tutor.tel2,
-        telUrg: tutor.telUrg, nomUrg: tutor.nomUrg, courriel: tutor.courriel,
+        nom1: tutor.nom1,
+        nom2: tutor.nom2,
+        recu: tutor.recu,
+        recuNom: tutor.recuNom,
+        nas: tutor.nas,
+        adresse: tutor.adresse,
+        ville: tutor.ville,
+        cp: tutor.cp,
+        tel1: tutor.tel1,
+        tel2: tutor.tel2,
+        telUrg: tutor.telUrg,
+        nomUrg: tutor.nomUrg,
+        courriel: tutor.courriel,
       },
-      photo_consent: extras.photo,
-      signature: extras.signature,
-      camps_subtotal:   +subTotal.toFixed(2),
-      extras_subtotal:  +tshirtSousTotal.toFixed(2),
-      tps_amount:       +tshirtTPS.toFixed(2),
-      tvq_amount:       +tshirtTVQ.toFixed(2),
-      total_amount:     +total.toFixed(2),
-      week_ids:  selectedWeeks,
-      weeks:     selectedWeeks,
+      photo_consent:   extras.photo,
+      signature:       extras.signature,
+      camps_subtotal:  +subTotal.toFixed(2),
+      extras_subtotal: +tshirtSousTotal.toFixed(2),
+      tps_amount:      +tshirtTPS.toFixed(2),
+      tvq_amount:      +tshirtTVQ.toFixed(2),
+      total_amount:    +total.toFixed(2),
+      week_ids:        selectedWeeks,
+      weeks:           selectedWeeks,
       children: children.map((c, i) => ({
-        sort_order: i,
-        first_name: c.firstName, last_name: c.lastName,
-        age: parseInt(c.age, 10), sex: c.sex, ramq: c.ramq,
-        dob_year: parseInt(c.dobA, 10), dob_month: parseInt(c.dobM, 10), dob_day: parseInt(c.dobJ, 10),
-        medication: c.medication, allergies: c.allergies,
-        tdah: c.tdah, tourette: c.tourette, tsa: c.tsa, asthme: c.asthme,
-        rien: c.rien, autres: c.autres || null, scolarise: c.scolarise,
+        sort_order:   i,
+        first_name:   c.firstName, last_name: c.lastName,
+        age:          parseInt(c.age, 10), sex: c.sex, ramq: c.ramq,
+        dob_year:     parseInt(c.dobA, 10), dob_month: parseInt(c.dobM, 10), dob_day: parseInt(c.dobJ, 10),
+        medication:   c.medication, allergies: c.allergies,
+        tdah:         c.tdah, tourette: c.tourette, tsa: c.tsa, asthme: c.asthme,
+        rien:         c.rien, autres: c.autres || null, scolarise: c.scolarise,
         weekly_price: priceFor(i),
       })),
       tshirts: tshirtsPayload,
     };
   };
 
-  // ─── Appelé par StripePaymentForm : paiement Stripe confirmé côté client ────
-  // Le webhook côté serveur s'occupe de créer la réservation dans Supabase.
-  // On poll /api/reservation-status jusqu'à ce qu'elle soit confirmée.
   const handlePaymentSuccess = async (piId) => {
     setPaymentIntentId(piId);
-    setStep(6); // Affiche l'écran d'attente → le polling prend le relais
+    setStep(6);
+  };
+
+  const resetCheckout = () => {
+    setCheckoutToken(null);
+    setClientSecret(null);
+    setClientSecretError(null);
+    setPaymentIntentId(null);
   };
 
   const next = () => {
@@ -617,7 +596,7 @@ export default function CampKarate() {
     }
   };
 
-  // ─── Sous-composants UI ───────────────────────────────────────────────────
+  // ─── UI helpers ────────────────────────────────────────────────────────────
   const rStyle = (sel) => ({
     display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
     padding: "9px 16px",
@@ -657,7 +636,7 @@ export default function CampKarate() {
     </div>
   );
 
-  // ─── Rendu ────────────────────────────────────────────────────────────────
+  // ─── RENDU ─────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{styleTag}</style>
@@ -677,6 +656,7 @@ export default function CampKarate() {
         </div>
 
         <div className="container">
+          {/* Stepper */}
           <div className="stepper">
             {steps.map((s, i) => (
               <div key={i} className="step-item">
@@ -691,7 +671,7 @@ export default function CampKarate() {
             ))}
           </div>
 
-          {/* ── STEP 0 : SEMAINES ── */}
+          {/* ── STEP 0 : SEMAINES ─────────────────────────────────────────── */}
           {step === 0 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
@@ -750,7 +730,7 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 1 : ENFANTS ── */}
+          {/* ── STEP 1 : ENFANTS ──────────────────────────────────────────── */}
           {step === 1 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
@@ -847,7 +827,7 @@ export default function CampKarate() {
 
               {children.length < 5 && (() => {
                 const newCount = children.length + 1;
-                const blocked = selectedWeeks.some(id => { const w = getWeekById(id); return w && getAvailable(w) < newCount; });
+                const blocked  = selectedWeeks.some(id => { const w = getWeekById(id); return w && getAvailable(w) < newCount; });
                 return (
                   <>
                     <button type="button" className="btn-add-child" onClick={addChild} disabled={blocked} style={blocked ? { opacity: 0.4, cursor: "not-allowed" } : {}}>
@@ -871,7 +851,7 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 2 : TUTEUR ── */}
+          {/* ── STEP 2 : TUTEUR ───────────────────────────────────────────── */}
           {step === 2 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
@@ -952,7 +932,7 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 3 : EXTRAS ── */}
+          {/* ── STEP 3 : EXTRAS ───────────────────────────────────────────── */}
           {step === 3 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
@@ -1046,7 +1026,7 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 4 : VÉRIFICATION ── */}
+          {/* ── STEP 4 : VÉRIFICATION ─────────────────────────────────────── */}
           {step === 4 && (
             <div className="card">
               <div className="section-title">Vérification 🔍</div>
@@ -1056,12 +1036,7 @@ export default function CampKarate() {
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem", color: "#1a0000" }}>🗓️ Semaines sélectionnées</div>
-                  <button type="button" className="btn-remove" onClick={() => {
-                      setReturnToVerif(true);
-                      // Invalider la session de paiement : données ou montant peuvent avoir changé
-                      setCheckoutToken(null); setClientSecret(null); setClientSecretError(null); setPaymentIntentId(null);
-                      setStep(0);
-                    }}>✏️ Modifier</button>
+                  <button type="button" className="btn-remove" onClick={() => { setReturnToVerif(true); resetCheckout(); setStep(0); }}>✏️ Modifier</button>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {selectedWeeks.map(id => { const w = getWeekById(id); return <span key={id} className="week-tag">{w?.label} · {formatWeekDates(w)}</span>; })}
@@ -1073,11 +1048,7 @@ export default function CampKarate() {
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem", color: "#1a0000" }}>👦👧 Enfant(s)</div>
-                  <button type="button" className="btn-remove" onClick={() => {
-                      setReturnToVerif(true);
-                      setCheckoutToken(null); setClientSecret(null); setClientSecretError(null); setPaymentIntentId(null);
-                      setStep(1);
-                    }}>✏️ Modifier</button>
+                  <button type="button" className="btn-remove" onClick={() => { setReturnToVerif(true); resetCheckout(); setStep(1); }}>✏️ Modifier</button>
                 </div>
                 {children.map((c, i) => (
                   <div key={c.id} style={{ background: "#fdfaf7", border: "1.5px solid #ece5db", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
@@ -1105,11 +1076,7 @@ export default function CampKarate() {
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem", color: "#1a0000" }}>👪 Parent(s) / tuteur(s)</div>
-                  <button type="button" className="btn-remove" onClick={() => {
-                      setReturnToVerif(true);
-                      setCheckoutToken(null); setClientSecret(null); setClientSecretError(null); setPaymentIntentId(null);
-                      setStep(2);
-                    }}>✏️ Modifier</button>
+                  <button type="button" className="btn-remove" onClick={() => { setReturnToVerif(true); resetCheckout(); setStep(2); }}>✏️ Modifier</button>
                 </div>
                 <div style={{ background: "#fdfaf7", border: "1.5px solid #ece5db", borderRadius: 12, padding: "14px 16px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", fontSize: "0.88rem" }}>
@@ -1126,15 +1093,11 @@ export default function CampKarate() {
               </div>
               <hr style={{ border: "none", borderTop: "1.5px solid #f0e8df", marginBottom: 20 }} />
 
-              {/* Extras */}
+              {/* Options */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem", color: "#1a0000" }}>🎽 Options</div>
-                  <button type="button" className="btn-remove" onClick={() => {
-                      setReturnToVerif(true);
-                      setCheckoutToken(null); setClientSecret(null); setClientSecretError(null); setPaymentIntentId(null);
-                      setStep(3);
-                    }}>✏️ Modifier</button>
+                  <button type="button" className="btn-remove" onClick={() => { setReturnToVerif(true); resetCheckout(); setStep(3); }}>✏️ Modifier</button>
                 </div>
                 <div style={{ background: "#fdfaf7", border: "1.5px solid #ece5db", borderRadius: 12, padding: "14px 16px", fontSize: "0.88rem" }}>
                   {nbGiftedShirts > 0 && (
@@ -1197,13 +1160,12 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 5 : PAIEMENT STRIPE ── */}
+          {/* ── STEP 5 : PAIEMENT STRIPE ──────────────────────────────────── */}
           {step === 5 && (
             <div className="card">
               <div className="section-title">Paiement 💳</div>
               <div className="section-sub">Saisissez vos informations de paiement pour confirmer votre inscription.</div>
 
-              {/* Récapitulatif */}
               <div className="receipt-box">
                 <div className="receipt-title">🧾 Récapitulatif de votre commande</div>
                 {children.map((c, i) => (
@@ -1242,13 +1204,14 @@ export default function CampKarate() {
                 </div>
               </div>
 
-              {/* Stripe Elements */}
               {clientSecretError && (
-                <div className="stripe-error">⚠️ {clientSecretError} <button type="button" style={{ marginLeft: 12, background: "none", border: "none", color: "#CC0000", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }} onClick={() => {
-                      setClientSecret(null);
-                      setClientSecretError(null);
-                      setRetryTrigger(t => t + 1); // relance create-payment-intent sans changer de step
-                    }}>Réessayer</button></div>
+                <div className="stripe-error">
+                  ⚠️ {clientSecretError}
+                  <button type="button" style={{ marginLeft: 12, background: "none", border: "none", color: "#CC0000", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}
+                    onClick={() => { setClientSecret(null); setClientSecretError(null); setRetryTrigger(t => t + 1); }}>
+                    Réessayer
+                  </button>
+                </div>
               )}
               {!clientSecret && !clientSecretError && (
                 <div style={{ textAlign: "center", padding: "32px 0", color: "#888", fontWeight: 700 }}>⏳ Initialisation du paiement sécurisé...</div>
@@ -1275,12 +1238,7 @@ export default function CampKarate() {
                   <StripePaymentForm
                     total={total}
                     onSuccess={handlePaymentSuccess}
-                    onBack={() => {
-                      setStep(4);
-                      setCheckoutToken(null); // nouveau token si l'utilisateur revient payer
-                      setClientSecret(null);
-                      setClientSecretError(null);
-                    }}
+                    onBack={() => { setStep(4); resetCheckout(); }}
                     loading={loading}
                     setLoading={setLoading}
                   />
@@ -1289,11 +1247,11 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 6 : ATTENTE WEBHOOK → CONFIRMATION ── */}
+          {/* ── STEP 6 : CONFIRMATION ─────────────────────────────────────── */}
           {step === 6 && (
             <div className="card">
 
-              {/* ── État : en attente de confirmation webhook ── */}
+              {/* Attente webhook */}
               {pollStatus === "waiting" && (
                 <div style={{ textAlign: "center", padding: "48px 24px" }}>
                   <div style={{ fontSize: "3rem", marginBottom: 20, animation: "bounce 1s ease infinite" }}>⏳</div>
@@ -1313,7 +1271,7 @@ export default function CampKarate() {
                 </div>
               )}
 
-              {/* ── État : échec ou timeout ── */}
+              {/* Échec / timeout */}
               {pollStatus === "failed" && (
                 <div style={{ textAlign: "center", padding: "40px 24px" }}>
                   <div style={{ fontSize: "3rem", marginBottom: 16 }}>⚠️</div>
@@ -1324,132 +1282,155 @@ export default function CampKarate() {
                     Votre paiement a été accepté, mais la confirmation d'inscription n'a pas encore été reçue.
                     Identifiant : <code style={{ background: "#f5f5f5", padding: "2px 8px", borderRadius: 6 }}>{paymentIntentId}</code>
                   </div>
-                  <button type="button" className="btn btn-secondary" onClick={() => {
-                    setPollStatus("waiting");
-                    setPollTrigger(t => t + 1); // relance le useEffect de polling
-                  }}>
+                  <button type="button" className="btn btn-secondary"
+                    onClick={() => { setPollStatus("waiting"); setPollTrigger(t => t + 1); }}>
                     🔄 Vérifier à nouveau
                   </button>
                 </div>
               )}
 
-              {/* ── État : inscription confirmée ── */}
+              {/* ── Inscription confirmée ── */}
               {pollStatus === "confirmed" && (
-              <>
-              <div className="confetti-area">
-                <div className="confetti-emoji">🥋</div>
-                <div className="confirm-title">Inscription confirmée !</div>
-                <div className="confirm-sub">
-                  Inscription confirmée pour <strong>{children.map((c, i) => c.firstName || `Enfant ${i + 1}`).join(", ")}</strong>
-                </div>
-              </div>
-              <div className="confirm-summary" id="confirmation-content">
-                <div className="confirm-row">
-                  <span className="key">Enfants inscrits</span>
-                  <span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {priceFor(i)} $/sem.</span>)}</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="key">Semaines</span>
-                  <span className="val">{selectedWeeks.map(id => { const w = getWeekById(id); return <span key={id} className="week-tag">{w?.label}</span>; })}</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="key">Sous-total camps</span>
-                  <span className="val">{fmt(subTotal)} $</span>
-                </div>
-                {nbGiftedShirts > 0 && (
-                  <div className="confirm-row">
-                    <span className="key" style={{ color: "#22c55e" }}>🎁 T-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""}</span>
-                    <span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {extras.tshirts[i]?.size || "?"} {extras.tshirts[i]?.type || ""}</span>)}</span>
+                <>
+                  <div className="confetti-area">
+                    <div className="confetti-emoji">🥋</div>
+                    {/* ✅ Titre + Dojo de Lavaltrie */}
+                    <div className="confirm-title">Inscription confirmée !</div>
+                    <div className="confirm-dojo">Dojo de Lavaltrie</div>
+                    <div className="confirm-sub">
+                      Inscription confirmée pour <strong>{children.map((c, i) => c.firstName || `Enfant ${i + 1}`).join(", ")}</strong>
+                    </div>
                   </div>
-                )}
-                {nbPaidShirts > 0 && <>
-                  <div className="confirm-row">
-                    <span className="key">T-shirts supplémentaires</span>
-                    <span className="val">{extras.tshirts.map((t, i) => t.want ? <span key={i} className="child-tag">{children[i]?.firstName || `Enfant ${i + 1}`} · {t.qty || 1}× {t.size2} {t.type2}</span> : null)}</span>
-                  </div>
-                  <div className="confirm-row">
-                    <span className="key">{nbPaidShirts} × {fmt(TSHIRT_PRICE)} $ (sous-total)</span>
-                    <span className="val">{fmt(tshirtSousTotal)} $</span>
-                  </div>
-                  <div className="confirm-row">
-                    <span className="key" style={{ color: "#aaa" }}>TPS (5 %)</span>
-                    <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span>
-                  </div>
-                  <div className="confirm-row">
-                    <span className="key" style={{ color: "#aaa" }}>TVQ (9,975 %)</span>
-                    <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span>
-                  </div>
-                  <div className="confirm-row">
-                    <span className="key">Total t-shirts avec taxes</span>
-                    <span className="val">{fmt(tshirtTotal)} $</span>
-                  </div>
-                </>}
-                <div className="confirm-row">
-                  <span className="key">Photos</span>
-                  <span className="val" style={{ color: extras.photo === "accepte" ? "#22c55e" : "#CC0000" }}>{extras.photo === "accepte" ? "✓ Autorisées" : "✗ Refusées"}</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="key">Total payé</span>
-                  <span className="val" style={{ color: "#CC0000", fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem" }}>{fmt(total)} $</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="key">Mode de paiement</span>
-                  <span className="val">Carte (Stripe)</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="key">Courriel</span>
-                  <span className="val">{tutor.courriel}</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="key">N° de confirmation</span>
-                  <span className="val" style={{ color: "#CC0000", fontFamily: "monospace" }}>{confNum}</span>
-                </div>
-              </div>
 
-              <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }} className="no-print">
-                <button type="button" className="btn btn-secondary" onClick={() => window.print()} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  🖨️ Imprimer
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => {
-                  const el = document.getElementById("confirmation-content");
-                  if (!el) return;
-                  const rows = [];
-                  el.querySelectorAll(".confirm-row").forEach(row => {
-                    const key = row.querySelector(".key")?.innerText || "";
-                    const val = row.querySelector(".val")?.innerText || "";
-                    rows.push(`<tr><td style="padding:8px 14px;color:#888;font-weight:700;border-bottom:1px dashed #ffe066;width:50%;font-size:13px">${key}</td><td style="padding:8px 14px;font-weight:800;border-bottom:1px dashed #ffe066;text-align:right;font-size:13px">${val}</td></tr>`);
-                  });
-                  const win = window.open("", "_blank", "width=700,height=900");
-                  if (!win) { alert("Veuillez autoriser les fenêtres pop-up pour sauvegarder le PDF."); return; }
-                  win.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Confirmation ${confNum}</title><style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;background:#fff;color:#1a0000;padding:32px;}.badge{background:#CC0000;color:white;padding:5px 16px;border-radius:20px;font-size:12px;letter-spacing:1px;display:inline-block;margin-bottom:14px;}h1{font-size:2rem;color:#CC0000;margin-bottom:4px;}h2{font-size:1rem;color:#888;font-weight:600;margin-bottom:20px;}table{width:100%;border-collapse:collapse;background:#fffbe6;border:2px solid #FFD700;border-radius:8px;overflow:hidden;margin-bottom:20px;}.footer{font-size:11px;color:#aaa;text-align:center;margin-bottom:20px;}.btn-pdf{display:block;width:100%;padding:14px;background:#CC0000;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;font-family:Arial;}@media print{.btn-pdf{display:none!important;}}</style></head><body><div class="badge">🥋 Inscriptions · Été 2026</div><h1>Camp de Jour Karaté</h1><h2>Confirmation d'inscription — ${confNum}</h2><table>${rows.join("")}</table><div class="footer">Ce document confirme votre inscription au Camp de Jour Karaté — Été 2026.</div><button class="btn-pdf" onclick="window.print()">🖨️ Enregistrer en PDF / Imprimer</button></body></html>`);
-                  win.document.close();
-                  win.focus();
-                  setTimeout(() => { win.print(); }, 300);
-                }} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  💾 Sauvegarder en PDF
-                </button>
-              </div>
+                  <div className="confirm-summary" id="confirmation-content">
+                    <div className="confirm-row">
+                      <span className="key">Enfants inscrits</span>
+                      <span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {priceFor(i)} $/sem.</span>)}</span>
+                    </div>
+                    <div className="confirm-row">
+                      <span className="key">Semaines</span>
+                      <span className="val">{selectedWeeks.map(id => { const w = getWeekById(id); return <span key={id} className="week-tag">{w?.label}</span>; })}</span>
+                    </div>
+                    <div className="confirm-row">
+                      <span className="key">Sous-total camps</span>
+                      <span className="val">{fmt(subTotal)} $</span>
+                    </div>
+                    {nbGiftedShirts > 0 && (
+                      <div className="confirm-row">
+                        <span className="key" style={{ color: "#22c55e" }}>🎁 T-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""}</span>
+                        <span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {extras.tshirts[i]?.size || "?"} {extras.tshirts[i]?.type || ""}</span>)}</span>
+                      </div>
+                    )}
+                    {nbPaidShirts > 0 && <>
+                      <div className="confirm-row">
+                        <span className="key">T-shirts supplémentaires</span>
+                        <span className="val">{extras.tshirts.map((t, i) => t.want ? <span key={i} className="child-tag">{children[i]?.firstName || `Enfant ${i + 1}`} · {t.qty || 1}× {t.size2} {t.type2}</span> : null)}</span>
+                      </div>
+                      <div className="confirm-row">
+                        <span className="key">{nbPaidShirts} × {fmt(TSHIRT_PRICE)} $ (sous-total)</span>
+                        <span className="val">{fmt(tshirtSousTotal)} $</span>
+                      </div>
+                      <div className="confirm-row">
+                        <span className="key" style={{ color: "#aaa" }}>TPS (5 %)</span>
+                        <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span>
+                      </div>
+                      <div className="confirm-row">
+                        <span className="key" style={{ color: "#aaa" }}>TVQ (9,975 %)</span>
+                        <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span>
+                      </div>
+                      <div className="confirm-row">
+                        <span className="key">Total t-shirts avec taxes</span>
+                        <span className="val">{fmt(tshirtTotal)} $</span>
+                      </div>
+                    </>}
+                    <div className="confirm-row">
+                      <span className="key">Photos</span>
+                      <span className="val" style={{ color: extras.photo === "accepte" ? "#22c55e" : "#CC0000" }}>{extras.photo === "accepte" ? "✓ Autorisées" : "✗ Refusées"}</span>
+                    </div>
+                    <div className="confirm-row">
+                      <span className="key">Total payé</span>
+                      <span className="val" style={{ color: "#CC0000", fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem" }}>{fmt(total)} $</span>
+                    </div>
+                    <div className="confirm-row">
+                      <span className="key">Mode de paiement</span>
+                      <span className="val">Carte (Stripe)</span>
+                    </div>
+                    <div className="confirm-row">
+                      <span className="key">Courriel</span>
+                      <span className="val">{tutor.courriel}</span>
+                    </div>
+                    <div className="confirm-row">
+                      <span className="key">N° de confirmation</span>
+                      <span className="val" style={{ color: "#CC0000", fontFamily: "monospace" }}>{confNum}</span>
+                    </div>
+                  </div>
 
-              <div style={{ textAlign: "center" }} className="no-print">
-                <button type="button" className="btn btn-primary btn-lg" onClick={() => {
-                  setStep(0); setSel([]);
-                  setChildren([newChild()]);
-                  setTutor({ nom1: "", nom2: "", recu: "", recuNom: "", nas: "", adresse: "", ville: "", cp: "", tel1: "", tel2: "", telUrg: "", nomUrg: "", courriel: "" });
-                  setExtras({ photo: null, signature: "", tshirts: [{ want: false, size: "", type: "", size2: "", type2: "", qty: 1 }] });
-                  setClientSecret(null);
-                  setClientSecretError(null);
-                  setReturnToVerif(false);
-                  setConfNum("");
-                  setPaymentIntentId(null);
-                  setPollStatus("waiting");
-                  setPollTrigger(0);
-                  setRetryTrigger(0);
-                  setCheckoutToken(null); // nouveau token pour la prochaine session
-                }}>➕ Nouvelle inscription</button>
-              </div>
-              </> )} {/* fin pollStatus === "confirmed" */}
+                  <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }} className="no-print">
+                    <button type="button" className="btn btn-secondary" onClick={() => window.print()} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      🖨️ Imprimer
+                    </button>
+                    {/* ✅ Popup PDF avec Dojo de Lavaltrie */}
+                    <button type="button" className="btn btn-secondary" onClick={() => {
+                      const el = document.getElementById("confirmation-content");
+                      if (!el) return;
+                      const rows = [];
+                      el.querySelectorAll(".confirm-row").forEach(row => {
+                        const key = row.querySelector(".key")?.innerText || "";
+                        const val = row.querySelector(".val")?.innerText || "";
+                        rows.push(`<tr><td style="padding:8px 14px;color:#888;font-weight:700;border-bottom:1px dashed #ffe066;width:50%;font-size:13px">${key}</td><td style="padding:8px 14px;font-weight:800;border-bottom:1px dashed #ffe066;text-align:right;font-size:13px">${val}</td></tr>`);
+                      });
+                      const win = window.open("", "_blank", "width=700,height=900");
+                      if (!win) { alert("Veuillez autoriser les fenêtres pop-up pour sauvegarder le PDF."); return; }
+                      win.document.write(`<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>Confirmation ${confNum}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,sans-serif;background:#fff;color:#1a0000;padding:32px;}
+  .badge{background:#CC0000;color:white;padding:5px 16px;border-radius:20px;font-size:12px;letter-spacing:1px;display:inline-block;margin-bottom:14px;}
+  h1{font-size:2rem;color:#CC0000;margin-bottom:4px;}
+  h2{font-size:1.1rem;color:#CC0000;font-weight:700;margin-bottom:4px;}
+  h3{font-size:0.95rem;color:#888;font-weight:600;margin-bottom:20px;}
+  table{width:100%;border-collapse:collapse;background:#fffbe6;border:2px solid #FFD700;border-radius:8px;overflow:hidden;margin-bottom:20px;}
+  .footer{font-size:11px;color:#aaa;text-align:center;margin-bottom:20px;}
+  .btn-pdf{display:block;width:100%;padding:14px;background:#CC0000;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;font-family:Arial;}
+  @media print{.btn-pdf{display:none!important;}}
+</style></head><body>
+<div class="badge">🥋 Inscriptions · Été 2026</div>
+<h1>Camp de Jour Karaté</h1>
+<h2>Dojo de Lavaltrie</h2>
+<h3>Confirmation d'inscription — ${confNum}</h3>
+<table>${rows.join("")}</table>
+<div class="footer">Ce document confirme votre inscription au Camp de Jour Karaté — Dojo de Lavaltrie — Été 2026.</div>
+<button class="btn-pdf" onclick="window.print()">🖨️ Enregistrer en PDF / Imprimer</button>
+</body></html>`);
+                      win.document.close();
+                      win.focus();
+                      setTimeout(() => { win.print(); }, 300);
+                    }} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      💾 Sauvegarder en PDF
+                    </button>
+                  </div>
+
+                  <div style={{ textAlign: "center" }} className="no-print">
+                    <button type="button" className="btn btn-primary btn-lg" onClick={() => {
+                      setStep(0); setSel([]);
+                      setChildren([newChild()]);
+                      setTutor({ nom1: "", nom2: "", recu: "", recuNom: "", nas: "", adresse: "", ville: "", cp: "", tel1: "", tel2: "", telUrg: "", nomUrg: "", courriel: "" });
+                      setExtras({ photo: null, signature: "", tshirts: [{ want: false, size: "", type: "", size2: "", type2: "", qty: 1 }] });
+                      resetCheckout();
+                      setReturnToVerif(false);
+                      setConfNum("");
+                      setPollStatus("waiting");
+                      setPollTrigger(0);
+                      setRetryTrigger(0);
+                    }}>➕ Nouvelle inscription</button>
+                  </div>
+                </>
+              )}
             </div>
           )}
+
         </div>
       </div>
     </>
