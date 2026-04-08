@@ -995,7 +995,7 @@ export default function CampKarate() {
               <div className="red-box">
                 <div className="yellow-box-title" style={{ color: "#CC0000", marginBottom: 8 }}>📸 Autorisation photos & vidéos</div>
                 <div className="auth-text">
-                  J'autorise le Camp de Jour Karaté à prendre et à utiliser des photos ou vidéos de mon enfant dans le cadre de ses communications, notamment sur son site web et ses médias sociaux. Cette autorisation est donnée sans compensation et peut être retirée pour les utilisations futures sur demande écrite.
+                  J'autorise le Camp de Jour Karaté à prendre et à utiliser des photos ou vidéos de mon enfant dans le cadre de ses communications, notamment sur son site web et ses médias sociaux. Cette autorisation est donnée sans compensation.
                 </div>
                 <Radio name="photo" val={extras.photo} onChange={v => setExtras({ ...extras, photo: v })} opts={[{ v: "accepte", l: "✓ J'accepte" }, { v: "refuse", l: "✗ Je refuse" }]} />
                 {errors.photo && <span className="error-msg">{errors.photo}</span>}
