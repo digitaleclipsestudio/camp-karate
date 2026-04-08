@@ -859,13 +859,13 @@ export default function CampKarate() {
               <div className="section-sub">Tous les champs marqués * sont obligatoires.</div>
               <div className="form-grid">
                 <div className="form-group">
-                  <label>Nom du tuteur 1 *</label>
-                  <input className={errors.tutorNom1 ? "error" : ""} value={tutor.nom1} onChange={e => setTutor({ ...tutor, nom1: e.target.value })} placeholder="Prénom et nom" autoComplete="name" />
+                  <label>Nom complet du tuteur 1 *</label>
+                  <input className={errors.tutorNom1 ? "error" : ""} value={tutor.nom1} onChange={e => setTutor({ ...tutor, nom1: e.target.value })} placeholder="Ex : Marie Tremblay" autoComplete="name" />
                   {errors.tutorNom1 && <span className="error-msg">{errors.tutorNom1}</span>}
                 </div>
                 <div className="form-group">
-                  <label>Nom du tuteur 2</label>
-                  <input value={tutor.nom2} onChange={e => setTutor({ ...tutor, nom2: e.target.value })} placeholder="Prénom et nom (optionnel)" autoComplete="name" />
+                  <label>Nom complet du tuteur 2</label>
+                  <input value={tutor.nom2} onChange={e => setTutor({ ...tutor, nom2: e.target.value })} placeholder="Ex : Jean Tremblay (optionnel)" autoComplete="name" />
                 </div>
                 <div className="form-group full">
                   <label>Reçu fiscal *</label>
