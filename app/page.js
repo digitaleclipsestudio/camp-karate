@@ -291,6 +291,11 @@ export default function CampKarate() {
 
   useEffect(() => { loadWeeks(); }, []);
 
+  // ─── Reset loading à chaque changement d'étape ──────────────────────────
+  useEffect(() => {
+    setLoading(false);
+  }, [step]);
+
   // ─── Obtenir le clientSecret Stripe quand on arrive à l'étape paiement ──
   useEffect(() => {
     if (step !== 5) return;
@@ -460,7 +465,7 @@ export default function CampKarate() {
       if (!c.firstName.trim()) e[`fn${i}`]   = "Requis";
       if (!c.lastName.trim())  e[`ln${i}`]   = "Requis";
       const age = parseInt(c.age);
-      if (!c.age)                     e[`age${i}`] = "Requis";
+      if (c.age === "" || c.age === null || c.age === undefined) e[`age${i}`] = "Requis";
       else if (isNaN(age) || age < 5) e[`age${i}`] = "Âge minimum : 5 ans";
       else if (age > 17)              e[`age${i}`] = "Âge maximum : 17 ans";
       if (!c.sex)              e[`sx${i}`]   = "Requis";
@@ -479,13 +484,6 @@ export default function CampKarate() {
         const testDate = new Date(dobA, dobM - 1, dobJ);
         if (testDate.getFullYear() !== dobA || testDate.getMonth() !== dobM - 1 || testDate.getDate() !== dobJ) {
           e[`dob${i}`] = "Date invalide";
-        } else {
-          const today = new Date();
-          const ageFromDob = today.getFullYear() - dobA - (
-            today.getMonth() < dobM - 1 || (today.getMonth() === dobM - 1 && today.getDate() < dobJ) ? 1 : 0
-          );
-          if (!isNaN(parseInt(c.age)) && Math.abs(ageFromDob - parseInt(c.age)) > 1)
-            e[`dob${i}`] = `La date ne correspond pas à l'âge indiqué (${ageFromDob} ans)`;
         }
       }
       if (!c.medication.trim()) e[`med${i}`] = "Requis";
@@ -1172,8 +1170,12 @@ export default function CampKarate() {
                     <span style={{ fontWeight: 800 }}>{fmt(tshirtSousTotal)} $</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}>
-                    <span style={{ color: "#666", fontWeight: 700 }}>TPS + TVQ</span>
-                    <span style={{ fontWeight: 800 }}>{fmt(tshirtTPS + tshirtTVQ)} $</span>
+                    <span style={{ color: "#666", fontWeight: 700 }}>TPS (5 %)</span>
+                    <span style={{ fontWeight: 800 }}>{fmt(tshirtTPS)} $</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}>
+                    <span style={{ color: "#666", fontWeight: 700 }}>TVQ (9,975 %)</span>
+                    <span style={{ fontWeight: 800 }}>{fmt(tshirtTVQ)} $</span>
                   </div>
                 </>}
                 {nbGiftedShirts > 0 && (
@@ -1367,7 +1369,19 @@ export default function CampKarate() {
                     <span className="val">{extras.tshirts.map((t, i) => t.want ? <span key={i} className="child-tag">{children[i]?.firstName || `Enfant ${i + 1}`} · {t.qty || 1}× {t.size2} {t.type2}</span> : null)}</span>
                   </div>
                   <div className="confirm-row">
-                    <span className="key">{nbPaidShirts} × {fmt(TSHIRT_PRICE)} $ + taxes</span>
+                    <span className="key">{nbPaidShirts} × {fmt(TSHIRT_PRICE)} $ (sous-total)</span>
+                    <span className="val">{fmt(tshirtSousTotal)} $</span>
+                  </div>
+                  <div className="confirm-row">
+                    <span className="key" style={{ color: "#aaa" }}>TPS (5 %)</span>
+                    <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span>
+                  </div>
+                  <div className="confirm-row">
+                    <span className="key" style={{ color: "#aaa" }}>TVQ (9,975 %)</span>
+                    <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span>
+                  </div>
+                  <div className="confirm-row">
+                    <span className="key">Total t-shirts avec taxes</span>
                     <span className="val">{fmt(tshirtTotal)} $</span>
                   </div>
                 </>}
