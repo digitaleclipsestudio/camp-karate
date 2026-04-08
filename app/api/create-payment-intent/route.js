@@ -4,11 +4,12 @@
 // 1. Reçoit un checkoutToken unique par tentative de paiement (généré côté front)
 // 2. Tente d'insérer la réservation avec ON CONFLICT (checkout_token) DO NOTHING
 //    → si le token existe déjà, récupère la réservation existante
-// 3. Crée ou récupère le PaymentIntent Stripe lié à cette réservation
-// 4. Retourne clientSecret + paymentIntentId au front
+// 3. Cherche un Customer Stripe existant par email, le crée seulement si absent
+// 4. Crée ou récupère le PaymentIntent Stripe lié à cette réservation
+// 5. Retourne clientSecret + paymentIntentId au front
 //
 // Garanti : un retry réseau ou un clic "Réessayer" ne crée jamais deux réservations
-// pour le même checkout_token.
+// pour le même checkout_token. Un même parent ne crée jamais deux Customer Stripe.
 
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
@@ -33,8 +34,6 @@ export async function POST(request) {
       return Response.json({ error: "checkoutToken manquant ou invalide" }, { status: 400 });
 
     // ── 1. Chercher une réservation existante pour ce checkoutToken ───────────
-    // Si le réseau a coupé après l'INSERT mais avant la réponse, le retry
-    // retrouve la réservation au lieu d'en créer une deuxième.
     const { data: existing, error: lookupError } = await supabaseAdmin
       .from("reservations")
       .select("id, reservation_number, stripe_payment_intent_id")
@@ -46,12 +45,10 @@ export async function POST(request) {
     let reservationId, reservationNumber, existingPiId;
 
     if (existing) {
-      // ── Réservation déjà créée pour ce token → réutiliser ──────────────────
       reservationId     = existing.id;
       reservationNumber = existing.reservation_number;
       existingPiId      = existing.stripe_payment_intent_id;
     } else {
-      // ── Nouvelle réservation ────────────────────────────────────────────────
       const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc(
         "create_reservation",
         {
@@ -67,11 +64,6 @@ export async function POST(request) {
 
       const rpcResult = Array.isArray(rpcData) ? rpcData[0] : rpcData;
 
-      // ── Idempotence : double requête simultanée (race condition) ─────────────
-      // Si deux appels arrivent avec le même token en même temps, l'un reçoit
-      // ok:false + code "23505" (violation unique checkout_token).
-      // On fait alors un second lookup pour récupérer la réservation
-      // déjà créée par l'autre requête plutôt que de retourner une erreur.
       if (!rpcResult?.ok && rpcResult?.code === "23505") {
         const { data: race, error: raceError } = await supabaseAdmin
           .from("reservations")
@@ -95,26 +87,50 @@ export async function POST(request) {
     }
 
     // ── 2. Réutiliser ou créer le PaymentIntent Stripe ────────────────────────
-    // Si un PI existe déjà pour cette réservation, on le réutilise directement
-    // (évite de créer plusieurs charges pour le même checkout).
     let paymentIntent;
 
     if (existingPiId) {
       paymentIntent = await stripe.paymentIntents.retrieve(existingPiId);
 
-      // Si le PI précédent est déjà confirmé ou annulé, il faut en créer un nouveau
       if (["succeeded", "canceled"].includes(paymentIntent.status)) {
-        existingPiId = null; // forcer la création ci-dessous
+        existingPiId = null;
       }
     }
 
     if (!existingPiId) {
+      // ── Chercher un Customer Stripe existant par email ──────────────────────
+      // Évite de créer un doublon si le même parent s'inscrit plusieurs fois.
+      let customerId;
+
+      if (customerEmail) {
+        const existingCustomers = await stripe.customers.list({
+          email: customerEmail,
+          limit: 1,
+        });
+
+        if (existingCustomers.data.length > 0) {
+          // Client déjà connu → réutiliser
+          customerId = existingCustomers.data[0].id;
+        } else {
+          // Nouveau client → créer
+          const newCustomer = await stripe.customers.create({
+            email: customerEmail,
+            name:  reservationPayload.tutor?.nom1 || undefined,
+            metadata: {
+              checkout_token: checkoutToken,
+            },
+          });
+          customerId = newCustomer.id;
+        }
+      }
+
       paymentIntent = await stripe.paymentIntents.create({
-        amount:       Math.round(amount * 100),
-        currency:     "cad",
+        amount:               Math.round(amount * 100),
+        currency:             "cad",
         payment_method_types: ["card"],
-        receipt_email: customerEmail || undefined,
-        description:  description || "Camp de Jour Karaté — Été 2026",
+        customer:             customerId || undefined,
+        receipt_email:        customerEmail || undefined,
+        description:          description || "Camp de Jour Karaté — Été 2026",
         metadata: {
           reservation_id:     reservationId,
           reservation_number: reservationNumber,
@@ -130,7 +146,6 @@ export async function POST(request) {
         .eq("id", reservationId);
 
       if (linkError) {
-        // Non bloquant : le webhook retrouvera la résa via reservation_id dans les metadata
         console.error(
           `Impossible de lier PI ${paymentIntent.id} à la résa ${reservationId}:`,
           linkError.message
