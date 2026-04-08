@@ -160,7 +160,7 @@ const styleTag = `
   }
 `;
 
-// ─── Composant interne Stripe (doit être enfant de <Elements>) ───────────────
+// ─── Composant Stripe ─────────────────────────────────────────────────────────
 function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
   const stripe   = useStripe();
   const elements = useElements();
@@ -170,25 +170,10 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
     if (!stripe || !elements) return;
     setStripeError(null);
     setLoading(true);
-
     const { error: submitError } = await elements.submit();
-    if (submitError) {
-      setStripeError(submitError.message);
-      setLoading(false);
-      return;
-    }
-
-    const { paymentIntent, error: confirmError } = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-    });
-
-    if (confirmError) {
-      setStripeError(confirmError.message);
-      setLoading(false);
-      return;
-    }
-
+    if (submitError) { setStripeError(submitError.message); setLoading(false); return; }
+    const { paymentIntent, error: confirmError } = await stripe.confirmPayment({ elements, redirect: "if_required" });
+    if (confirmError) { setStripeError(confirmError.message); setLoading(false); return; }
     onSuccess(paymentIntent?.id);
   };
 
@@ -196,24 +181,12 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
     <>
       {stripeError && <div className="stripe-error">⚠️ {stripeError}</div>}
       <div className="stripe-wrapper">
-        <PaymentElement
-          options={{
-            layout: "tabs",
-            fields: { billingDetails: { name: "auto", email: "auto" } },
-          }}
-        />
+        <PaymentElement options={{ layout: "tabs", fields: { billingDetails: { name: "auto", email: "auto" } } }} />
       </div>
       <div className="security-note">🔒 Paiement sécurisé par Stripe</div>
       <div className="btn-row">
-        <button type="button" className="btn btn-secondary" onClick={onBack} disabled={loading}>
-          ← Retour
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary btn-lg"
-          onClick={handlePay}
-          disabled={!stripe || !elements || loading}
-        >
+        <button type="button" className="btn btn-secondary" onClick={onBack} disabled={loading}>← Retour</button>
+        <button type="button" className="btn btn-primary btn-lg" onClick={handlePay} disabled={!stripe || !elements || loading}>
           {loading ? "⏳ Traitement..." : `Payer — ${fmt(total)} $`}
         </button>
       </div>
@@ -221,7 +194,7 @@ function StripePaymentForm({ total, onSuccess, onBack, loading, setLoading }) {
   );
 }
 
-// ─── Composant principal ─────────────────────────────────────────────────────
+// ─── Composant principal ──────────────────────────────────────────────────────
 export default function CampKarate() {
   const [step, setStep]         = useState(0);
   const [selectedWeeks, setSel] = useState([]);
@@ -239,6 +212,7 @@ export default function CampKarate() {
   const [checkoutToken, setCheckoutToken]   = useState(null);
   const [clientSecret, setClientSecret]     = useState(null);
   const [clientSecretError, setClientSecretError] = useState(null);
+  const [paymentDate, setPaymentDate]       = useState("");
 
   const [tutor, setTutor] = useState({
     nom1: "", nom2: "", recu: "", recuNom: "", nas: "",
@@ -260,15 +234,11 @@ export default function CampKarate() {
   const tshirtTPS       = nbPaidShirts * TSHIRT_TPS;
   const tshirtTVQ       = nbPaidShirts * TSHIRT_TVQ;
   const tshirtTotal     = nbPaidShirts * TSHIRT_TOTAL;
-  const nbTshirts       = nbGiftedShirts + nbPaidShirts;
   const total           = subTotal + tshirtTotal;
 
   // ─── Chargement semaines ───────────────────────────────────────────────────
   const loadWeeks = async () => {
-    const { data, error } = await supabase
-      .from("week_availability")
-      .select("*")
-      .order("starts_on", { ascending: true });
+    const { data, error } = await supabase.from("week_availability").select("*").order("starts_on", { ascending: true });
     if (error) { setWeeksError(error.message); setDbWeeks([]); return; }
     setWeeksError(null);
     setDbWeeks(data || []);
@@ -277,10 +247,9 @@ export default function CampKarate() {
   useEffect(() => { loadWeeks(); }, []);
   useEffect(() => { setLoading(false); }, [step]);
 
-  // ─── ClientSecret Stripe à l'étape paiement ───────────────────────────────
+  // ─── ClientSecret Stripe ───────────────────────────────────────────────────
   useEffect(() => {
     if (step !== 5) return;
-
     const token = checkoutToken ?? crypto.randomUUID();
     if (!checkoutToken) setCheckoutToken(token);
 
@@ -312,7 +281,7 @@ export default function CampKarate() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, retryTrigger]);
 
-  // ─── Polling confirmation webhook ─────────────────────────────────────────
+  // ─── Polling ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (step !== 6 || !paymentIntentId) return;
     if (pollStatus === "confirmed" || pollStatus === "failed") return;
@@ -326,6 +295,11 @@ export default function CampKarate() {
         const data = await res.json();
         if (data.status === "confirmed") {
           setConfNum(data.reservation_number || "");
+          setPaymentDate(
+            new Date().toLocaleDateString("fr-CA", { year: "numeric", month: "long", day: "numeric" }) +
+            " à " +
+            new Date().toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" })
+          );
           setPollStatus("confirmed");
           await loadWeeks();
         } else if (data.status === "failed" || data.status === "cancelled") {
@@ -393,7 +367,7 @@ export default function CampKarate() {
     setExtras(e => ({ ...e, tshirts: e.tshirts.map((t, i) => i === idx ? { ...t, [field]: val } : t) }));
 
   const toggleWeek = (id) => {
-    const week      = getWeekById(id);
+    const week = getWeekById(id);
     if (!week) return;
     const available = getAvailable(week);
     if (available <= 0) return;
@@ -402,13 +376,9 @@ export default function CampKarate() {
   };
 
   // ─── Validations ───────────────────────────────────────────────────────────
-  const normalizePhone = (v) => {
-    let d = v.replace(/\D/g, "");
-    if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
-    return d;
-  };
-  const isValidPhone = (v) => normalizePhone(v).length === 10;
-  const formatPhone  = (v) => {
+  const normalizePhone = (v) => { let d = v.replace(/\D/g, ""); if (d.length === 11 && d.startsWith("1")) d = d.slice(1); return d; };
+  const isValidPhone   = (v) => normalizePhone(v).length === 10;
+  const formatPhone    = (v) => {
     const d = normalizePhone(v).slice(0, 10);
     if (d.length <= 3) return d;
     if (d.length <= 6) return `${d.slice(0,3)}-${d.slice(3)}`;
@@ -422,13 +392,9 @@ export default function CampKarate() {
   };
 
   const validateChildrenStep = (e) => {
-    const overbooked = selectedWeeks.filter(id => {
-      const w = getWeekById(id);
-      return w && getAvailable(w) < children.length;
-    });
+    const overbooked = selectedWeeks.filter(id => { const w = getWeekById(id); return w && getAvailable(w) < children.length; });
     if (overbooked.length > 0)
       e.spots = `Places insuffisantes pour ${children.length} enfants : ${overbooked.map(id => getWeekById(id)?.label).join(", ")}`;
-
     children.forEach((c, i) => {
       if (!c.firstName.trim()) e[`fn${i}`]   = "Requis";
       if (!c.lastName.trim())  e[`ln${i}`]   = "Requis";
@@ -440,15 +406,11 @@ export default function CampKarate() {
       if (!c.ramq.trim())      e[`ramq${i}`] = "Requis";
       else if (!/^[A-Za-z]{4}\d{8}$/.test(c.ramq.replace(/\s/g, ""))) e[`ramq${i}`] = "Format : ABCD 0000 0000";
       const dobA = parseInt(c.dobA), dobM = parseInt(c.dobM), dobJ = parseInt(c.dobJ);
-      if (!c.dobA || !c.dobM || !c.dobJ) {
-        e[`dob${i}`] = "Requis";
-      } else if (isNaN(dobA) || dobA < 1900 || dobA > new Date().getFullYear()) {
-        e[`dob${i}`] = "Année invalide";
-      } else if (isNaN(dobM) || dobM < 1 || dobM > 12) {
-        e[`dob${i}`] = "Mois invalide (01-12)";
-      } else if (isNaN(dobJ) || dobJ < 1 || dobJ > 31) {
-        e[`dob${i}`] = "Jour invalide (01-31)";
-      } else {
+      if (!c.dobA || !c.dobM || !c.dobJ) { e[`dob${i}`] = "Requis"; }
+      else if (isNaN(dobA) || dobA < 1900 || dobA > new Date().getFullYear()) { e[`dob${i}`] = "Année invalide"; }
+      else if (isNaN(dobM) || dobM < 1 || dobM > 12) { e[`dob${i}`] = "Mois invalide (01-12)"; }
+      else if (isNaN(dobJ) || dobJ < 1 || dobJ > 31) { e[`dob${i}`] = "Jour invalide (01-31)"; }
+      else {
         const testDate = new Date(dobA, dobM - 1, dobJ);
         if (testDate.getFullYear() !== dobA || testDate.getMonth() !== dobM - 1 || testDate.getDate() !== dobJ)
           e[`dob${i}`] = "Date invalide";
@@ -505,86 +467,47 @@ export default function CampKarate() {
   // ─── Payload Supabase ──────────────────────────────────────────────────────
   const buildReservationPayload = () => {
     const tshirtsPayload = children.flatMap((c, i) => {
-      const t    = extras.tshirts[i];
+      const t = extras.tshirts[i];
       const rows = [];
       if (selectedWeeks.length >= 2) {
-        rows.push({
-          child_sort_order: i, is_gift: true, want: true, want_extra: false,
-          size: t?.size || null, shirt_type: t?.type || null,
-          qty: 1, quantity: 1, unit_price: 0, price: 0,
-        });
+        rows.push({ child_sort_order: i, is_gift: true, want: true, size: t?.size || null, shirt_type: t?.type || null, qty: 1, quantity: 1, unit_price: 0, price: 0 });
       }
       if (t?.want) {
         const qty = t.qty || 1;
-        rows.push({
-          child_sort_order: i, is_gift: false, want: true, want_extra: true,
-          size: t.size2 || null, shirt_type: t.type2 || null,
-          qty, quantity: qty, unit_price: TSHIRT_PRICE, price: TSHIRT_PRICE,
-        });
+        rows.push({ child_sort_order: i, is_gift: false, want: true, size: t.size2 || null, shirt_type: t.type2 || null, qty, quantity: qty, unit_price: TSHIRT_PRICE, price: TSHIRT_PRICE });
       }
       return rows;
     });
-
     return {
-      pay_method: "full",
-      status: "pending_payment",
-      tutor: {
-        nom1: tutor.nom1,
-        nom2: tutor.nom2,
-        recu: tutor.recu,
-        recuNom: tutor.recuNom,
-        nas: tutor.nas,
-        adresse: tutor.adresse,
-        ville: tutor.ville,
-        cp: tutor.cp,
-        tel1: tutor.tel1,
-        tel2: tutor.tel2,
-        telUrg: tutor.telUrg,
-        nomUrg: tutor.nomUrg,
-        courriel: tutor.courriel,
-      },
-      photo_consent:   extras.photo,
-      signature:       extras.signature,
-      camps_subtotal:  +subTotal.toFixed(2),
-      extras_subtotal: +tshirtSousTotal.toFixed(2),
-      tps_amount:      +tshirtTPS.toFixed(2),
-      tvq_amount:      +tshirtTVQ.toFixed(2),
-      total_amount:    +total.toFixed(2),
-      week_ids:        selectedWeeks,
-      weeks:           selectedWeeks,
+      pay_method: "full", status: "pending_payment",
+      tutor: { nom1: tutor.nom1, nom2: tutor.nom2, recu: tutor.recu, recuNom: tutor.recuNom, nas: tutor.nas, adresse: tutor.adresse, ville: tutor.ville, cp: tutor.cp, tel1: tutor.tel1, tel2: tutor.tel2, telUrg: tutor.telUrg, nomUrg: tutor.nomUrg, courriel: tutor.courriel },
+      photo_consent: extras.photo, signature: extras.signature,
+      camps_subtotal: +subTotal.toFixed(2), extras_subtotal: +tshirtSousTotal.toFixed(2),
+      tps_amount: +tshirtTPS.toFixed(2), tvq_amount: +tshirtTVQ.toFixed(2), total_amount: +total.toFixed(2),
+      week_ids: selectedWeeks, weeks: selectedWeeks,
       children: children.map((c, i) => ({
-        sort_order:   i,
-        first_name:   c.firstName, last_name: c.lastName,
-        age:          parseInt(c.age, 10), sex: c.sex, ramq: c.ramq,
-        dob_year:     parseInt(c.dobA, 10), dob_month: parseInt(c.dobM, 10), dob_day: parseInt(c.dobJ, 10),
-        medication:   c.medication, allergies: c.allergies,
-        tdah:         c.tdah, tourette: c.tourette, tsa: c.tsa, asthme: c.asthme,
-        rien:         c.rien, autres: c.autres || null, scolarise: c.scolarise,
-        weekly_price: priceFor(i),
+        sort_order: i, first_name: c.firstName, last_name: c.lastName,
+        age: parseInt(c.age, 10), sex: c.sex, ramq: c.ramq,
+        dob_year: parseInt(c.dobA, 10), dob_month: parseInt(c.dobM, 10), dob_day: parseInt(c.dobJ, 10),
+        medication: c.medication, allergies: c.allergies,
+        tdah: c.tdah, tourette: c.tourette, tsa: c.tsa, asthme: c.asthme,
+        rien: c.rien, autres: c.autres || null, scolarise: c.scolarise, weekly_price: priceFor(i),
       })),
       tshirts: tshirtsPayload,
     };
   };
 
-  const handlePaymentSuccess = async (piId) => {
-    setPaymentIntentId(piId);
-    setStep(6);
-  };
+  const handlePaymentSuccess = async (piId) => { setPaymentIntentId(piId); setStep(6); };
 
   const resetCheckout = () => {
-    setCheckoutToken(null);
-    setClientSecret(null);
-    setClientSecretError(null);
-    setPaymentIntentId(null);
+    setCheckoutToken(null); setClientSecret(null);
+    setClientSecretError(null); setPaymentIntentId(null);
   };
 
   const next = () => {
     if (step === 0 && selectedWeeks.length === 0) return;
     if (!validateStep()) {
-      setTimeout(() => {
-        const firstError = document.querySelector(".error-msg");
-        if (firstError) firstError.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 50);
+      setTimeout(() => { const firstError = document.querySelector(".error-msg"); if (firstError) firstError.scrollIntoView({ behavior: "smooth", block: "center" }); }, 50);
       return;
     }
     if (returnToVerif && step !== 4) {
@@ -598,8 +521,7 @@ export default function CampKarate() {
 
   // ─── UI helpers ────────────────────────────────────────────────────────────
   const rStyle = (sel) => ({
-    display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
-    padding: "9px 16px",
+    display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: "9px 16px",
     background: sel ? "#fff5f5" : "#fdfaf7",
     border: sel ? "2px solid #CC0000" : "2px solid #ece5db",
     borderRadius: 12, fontSize: "0.88rem", fontWeight: 800,
@@ -636,6 +558,120 @@ export default function CampKarate() {
     </div>
   );
 
+  // ─── PDF légal ────────────────────────────────────────────────────────────
+  const openPdfPopup = () => {
+    const win = window.open("", "_blank", "width=760,height=1050");
+    if (!win) { alert("Veuillez autoriser les fenêtres pop-up pour sauvegarder le PDF."); return; }
+
+    const semaines = selectedWeeks.map(id => getWeekById(id)?.label).filter(Boolean).join(", ");
+    const enfantsLignes = children.map((c, i) =>
+      `<tr><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#555;font-weight:600">${c.firstName} ${c.lastName} (${ordinal(i)} enfant)</td><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700">${selectedWeeks.length} sem. × ${priceFor(i)} $ = ${fmt(selectedWeeks.length * priceFor(i))} $</td></tr>`
+    ).join("");
+
+    const tshirtsLignes = nbGiftedShirts > 0
+      ? `<tr><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#22c55e;font-weight:600">🎁 T-shirts offerts (2 sem. ou +) — ${children.map((c, i) => `${c.firstName} : ${extras.tshirts[i]?.size || "?"} ${extras.tshirts[i]?.type || ""}`).join(", ")}</td><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#22c55e">Inclus</td></tr>`
+      : "";
+
+    const extraLignes = nbPaidShirts > 0
+      ? `<tr><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#555;font-weight:600">T-shirts supplémentaires (${nbPaidShirts} × ${fmt(TSHIRT_PRICE)} $)</td><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700">${fmt(tshirtSousTotal)} $</td></tr>
+         <tr><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#888;font-weight:600">TPS (5 %) — N° 711574897 RC 0001</td><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#888">${fmt(tshirtTPS)} $</td></tr>
+         <tr><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#888;font-weight:600">TVQ (9,975 %) — N° 1224802931 IC 0001</td><td style="padding:7px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#888">${fmt(tshirtTVQ)} $</td></tr>`
+      : "";
+
+    win.document.write(`<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>Reçu ${confNum}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,sans-serif;background:#fff;color:#1a0000;padding:36px;max-width:700px;margin:0 auto;}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:3px solid #CC0000;margin-bottom:22px;}
+  .org-name{font-size:1.5rem;font-weight:900;color:#CC0000;margin-bottom:2px;}
+  .org-sub{font-size:0.9rem;color:#CC0000;font-weight:700;margin-bottom:8px;}
+  .org-details{font-size:0.75rem;color:#555;line-height:1.9;}
+  .doc-right{text-align:right;}
+  .doc-label{font-size:0.68rem;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px;}
+  .doc-num{font-size:1.1rem;font-weight:900;color:#CC0000;font-family:monospace;margin-bottom:6px;}
+  .doc-date{font-size:0.75rem;color:#555;line-height:1.8;}
+  .badge-paid{display:inline-block;background:#22c55e;color:white;padding:4px 14px;border-radius:20px;font-size:0.7rem;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-top:10px;}
+  .section{margin-bottom:18px;}
+  .section-label{font-size:0.65rem;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;}
+  .info-box{background:#fafafa;border:1px solid #e8e8e8;border-radius:8px;padding:11px 15px;font-size:0.82rem;line-height:2;}
+  .info-box strong{color:#1a0000;font-weight:700;}
+  table{width:100%;border-collapse:collapse;border:2px solid #FFD700;border-radius:8px;overflow:hidden;margin-bottom:4px;}
+  thead tr{background:#FFD700;}
+  thead td{padding:8px 14px;font-weight:800;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.5px;color:#7a6000;}
+  .total-row td{font-weight:900;color:#CC0000;font-size:1rem;padding:12px 14px;border-top:3px solid #CC0000;background:#fff0f0;}
+  .tax-note{font-size:0.7rem;color:#888;font-style:italic;margin-top:6px;line-height:1.7;}
+  .footer{margin-top:22px;padding-top:14px;border-top:1px solid #e0e0e0;font-size:0.68rem;color:#888;line-height:2;text-align:center;}
+  .btn-pdf{display:block;width:100%;padding:14px;background:#CC0000;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;font-family:Arial;margin-top:18px;}
+  @media print{.btn-pdf{display:none!important;}}
+</style></head><body>
+
+<div class="top">
+  <div>
+    <div class="org-name">Camp de Jour Karaté</div>
+    <div class="org-sub">Dojo de Lavaltrie — Karaté Sunfuki</div>
+    <div class="org-details">
+      C-985 rue Notre-Dame<br>
+      Lavaltrie, QC &nbsp; J5T 1R4<br>
+      Tél. : 438-886-6270<br>
+      lavaltrie@karatesunfuki.com
+    </div>
+  </div>
+  <div class="doc-right">
+    <div class="doc-label">Confirmation &amp; Reçu de paiement</div>
+    <div class="doc-num">${confNum}</div>
+    <div class="doc-date">
+      Date du paiement :<br>
+      <strong>${paymentDate}</strong><br>
+      Mode : Carte (Stripe) — Paiement complet
+    </div>
+    <div class="badge-paid">✓ Paiement complet reçu</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-label">Payeur</div>
+  <div class="info-box">
+    <strong>Tuteur 1 :</strong> ${tutor.nom1 || "—"}<br>
+    ${tutor.nom2 ? `<strong>Tuteur 2 :</strong> ${tutor.nom2}<br>` : ""}
+    <strong>Adresse :</strong> ${tutor.adresse || "—"}, ${tutor.ville || "—"} &nbsp;${tutor.cp || "—"}<br>
+    <strong>Courriel :</strong> ${tutor.courriel || "—"}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-label">Détail de la commande — ${semaines}</div>
+  <table>
+    <thead><tr><td>Description</td><td style="text-align:right">Montant</td></tr></thead>
+    <tbody>
+      ${enfantsLignes}
+      ${tshirtsLignes}
+      ${extraLignes}
+      <tr class="total-row">
+        <td>TOTAL PAYÉ — Paiement unique et complet</td>
+        <td style="text-align:right">${fmt(total)} $</td>
+      </tr>
+    </tbody>
+  </table>
+  ${nbPaidShirts > 0
+    ? `<div class="tax-note">Les taxes (TPS/TVQ) s'appliquent uniquement sur les articles de marchandise (t-shirts). Les frais d'inscription au camp sont exempts de taxes.</div>`
+    : `<div class="tax-note">Les frais d'inscription au camp sont exempts de taxes (TPS N° 711574897 RC 0001 · TVQ N° 1224802931 IC 0001).</div>`
+  }
+</div>
+
+<div class="footer">
+  Ce document confirme votre inscription et votre paiement au Camp de Jour Karaté — Dojo de Lavaltrie — Été 2026.<br>
+  Conservez ce reçu pour vos dossiers. &nbsp;|&nbsp; Questions : lavaltrie@karatesunfuki.com &nbsp;|&nbsp; 438-886-6270
+</div>
+
+<button class="btn-pdf" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
+  };
+
   // ─── RENDU ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -671,7 +707,7 @@ export default function CampKarate() {
             ))}
           </div>
 
-          {/* ── STEP 0 : SEMAINES ─────────────────────────────────────────── */}
+          {/* ── STEP 0 : SEMAINES ── */}
           {step === 0 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
@@ -687,15 +723,13 @@ export default function CampKarate() {
               {dbWeeks !== null && !weeksError && dbWeeks.length === 0 && <div style={{ textAlign: "center", padding: "20px 0", color: "#888", fontWeight: 700 }}>Aucune semaine disponible pour le moment.</div>}
               <div className="weeks-grid">
                 {weeksSource.map(w => {
-                  const available       = getAvailable(w);
-                  const booked          = getBooked(w);
-                  const capacity        = getCapacity(w);
-                  const pct             = capacity > 0 ? (booked / capacity) * 100 : 0;
-                  const isSelected      = selectedWeeks.includes(w.id);
+                  const available = getAvailable(w), booked = getBooked(w), capacity = getCapacity(w);
+                  const pct = capacity > 0 ? (booked / capacity) * 100 : 0;
+                  const isSelected = selectedWeeks.includes(w.id);
                   const enoughForFamily = available >= children.length;
-                  const isFull          = available <= 0;
-                  const isBlocked       = isFull || !enoughForFamily;
-                  const barColor        = pct > 80 ? "#CC0000" : pct > 50 ? "#ff9800" : "#22c55e";
+                  const isFull = available <= 0;
+                  const isBlocked = isFull || !enoughForFamily;
+                  const barColor = pct > 80 ? "#CC0000" : pct > 50 ? "#ff9800" : "#22c55e";
                   return (
                     <div key={w.id} className={`week-card ${isSelected ? "selected" : ""} ${isBlocked ? "full" : ""}`} onClick={() => !isBlocked && toggleWeek(w.id)}>
                       {isSelected && <div className="week-check">✓</div>}
@@ -703,13 +737,9 @@ export default function CampKarate() {
                       <div className="week-dates">{formatWeekDates(w)}</div>
                       <div className="week-spots">
                         <div className="spots-bar"><div className="spots-fill" style={{ width: `${pct}%`, background: barColor }} /></div>
-                        {isFull ? (
-                          <span className="full-badge">Complet</span>
-                        ) : !enoughForFamily ? (
-                          <span className="spots-text" style={{ color: "#CC0000" }}>Pas assez pour {children.length} enfant{children.length > 1 ? "s" : ""}</span>
-                        ) : (
-                          <span className="spots-text" style={{ color: barColor }}>{available} place{available > 1 ? "s" : ""}</span>
-                        )}
+                        {isFull ? <span className="full-badge">Complet</span>
+                          : !enoughForFamily ? <span className="spots-text" style={{ color: "#CC0000" }}>Pas assez pour {children.length} enfant{children.length > 1 ? "s" : ""}</span>
+                          : <span className="spots-text" style={{ color: barColor }}>{available} place{available > 1 ? "s" : ""}</span>}
                       </div>
                     </div>
                   );
@@ -730,28 +760,18 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 1 : ENFANTS ──────────────────────────────────────────── */}
+          {/* ── STEP 1 : ENFANTS ── */}
           {step === 1 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
-              {errors.spots && (
-                <div style={{ background: "#fff5f5", border: "2px solid #CC0000", borderRadius: 12, padding: "12px 16px", marginBottom: 16, color: "#CC0000", fontWeight: 800, fontSize: "0.9rem" }}>
-                  ⚠️ {errors.spots}
-                </div>
-              )}
+              {errors.spots && <div style={{ background: "#fff5f5", border: "2px solid #CC0000", borderRadius: 12, padding: "12px 16px", marginBottom: 16, color: "#CC0000", fontWeight: 800, fontSize: "0.9rem" }}>⚠️ {errors.spots}</div>}
               <div className="section-title">Informations des enfant(s) 👦👧</div>
               <div className="section-sub">Tous les champs sont obligatoires.</div>
-
               {children.map((c, idx) => (
                 <div key={c.id} className={`child-block${childColor(idx)}`}>
                   <div className="child-header">
-                    <div className="child-title">
-                      🥋 {ordinal(idx)} enfant
-                      <span className={`child-price-badge ${badgeClass(idx)}`}>{priceFor(idx)} $/sem.</span>
-                    </div>
-                    {children.length > 1 && (
-                      <button type="button" className="btn-remove" onClick={() => removeChild(idx)}>✕ Retirer</button>
-                    )}
+                    <div className="child-title">🥋 {ordinal(idx)} enfant <span className={`child-price-badge ${badgeClass(idx)}`}>{priceFor(idx)} $/sem.</span></div>
+                    {children.length > 1 && <button type="button" className="btn-remove" onClick={() => removeChild(idx)}>✕ Retirer</button>}
                   </div>
                   <div className="form-grid">
                     <div className="form-group">
@@ -824,10 +844,9 @@ export default function CampKarate() {
                   </div>
                 </div>
               ))}
-
               {children.length < 5 && (() => {
                 const newCount = children.length + 1;
-                const blocked  = selectedWeeks.some(id => { const w = getWeekById(id); return w && getAvailable(w) < newCount; });
+                const blocked = selectedWeeks.some(id => { const w = getWeekById(id); return w && getAvailable(w) < newCount; });
                 return (
                   <>
                     <button type="button" className="btn-add-child" onClick={addChild} disabled={blocked} style={blocked ? { opacity: 0.4, cursor: "not-allowed" } : {}}>
@@ -837,7 +856,6 @@ export default function CampKarate() {
                   </>
                 );
               })()}
-
               <div className="summary-bar" style={{ marginBottom: 24 }}>
                 {children.map((c, i) => (
                   <div key={c.id}><div className="label">{c.firstName || `Enfant ${i + 1}`}</div><div className="value">{selectedWeeks.length * priceFor(i)} $</div></div>
@@ -851,7 +869,7 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 2 : TUTEUR ───────────────────────────────────────────── */}
+          {/* ── STEP 2 : TUTEUR ── */}
           {step === 2 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
@@ -932,21 +950,18 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 3 : EXTRAS ───────────────────────────────────────────── */}
+          {/* ── STEP 3 : EXTRAS ── */}
           {step === 3 && (
             <div className="card">
               {returnToVerif && <EditBanner />}
               <div className="section-title">Options & Autorisations 🎽</div>
               <div className="section-sub">T-Shirt par enfant, photos et signature.</div>
-
               <div className="yellow-box">
                 <div className="yellow-box-title">🥋 T-Shirt du dojo</div>
                 <div className="yellow-box-note">Un t-shirt noir est obligatoire tous les jours. Vous pouvez commander le t-shirt officiel du dojo (17,40 $ + taxes) ou utiliser n'importe quel t-shirt noir que vous possédez déjà. 🎁 1 t-shirt offert par enfant inscrit à 2 semaines ou plus !</div>
                 {children.map((c, idx) => (
                   <div key={c.id} style={{ marginBottom: idx < children.length - 1 ? 14 : 0 }}>
-                    <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "0.9rem", color: "#1a0000", marginBottom: 8 }}>
-                      {c.firstName || `Enfant ${idx + 1}`}
-                    </div>
+                    <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "0.9rem", color: "#1a0000", marginBottom: 8 }}>{c.firstName || `Enfant ${idx + 1}`}</div>
                     {selectedWeeks.length >= 2 && (
                       <div style={{ background: "#f0fff4", border: "1.5px solid #22c55e", borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
                         <div style={{ color: "#22c55e", fontWeight: 800, fontSize: "0.88rem", marginBottom: 8 }}>🎁 1 t-shirt offert inclus — choisissez la taille</div>
@@ -991,22 +1006,15 @@ export default function CampKarate() {
                   </div>
                 ))}
               </div>
-
               <div className="red-box">
                 <div className="yellow-box-title" style={{ color: "#CC0000", marginBottom: 8 }}>📸 Autorisation photos & vidéos</div>
-                <div className="auth-text">
-                  J'autorise le Camp de Jour Karaté à prendre et à utiliser des photos ou vidéos de mon enfant dans le cadre de ses communications, notamment sur son site web et ses médias sociaux. Cette autorisation est donnée sans compensation.
-                </div>
+                <div className="auth-text">J'autorise le Camp de Jour Karaté à prendre et à utiliser des photos ou vidéos de mon enfant dans le cadre de ses communications, notamment sur son site web et ses médias sociaux. Cette autorisation est donnée sans compensation.</div>
                 <Radio name="photo" val={extras.photo} onChange={v => setExtras({ ...extras, photo: v })} opts={[{ v: "accepte", l: "✓ J'accepte" }, { v: "refuse", l: "✗ Je refuse" }]} />
                 {errors.photo && <span className="error-msg">{errors.photo}</span>}
               </div>
-
               <div className="legal-box">
-                <div className="legal-text">
-                  <strong>AUCUN REMBOURSEMENT</strong> en cas d'annulation. En signant, vous confirmez l'exactitude des informations et acceptez les conditions du Camp de Jour Karaté.
-                </div>
+                <div className="legal-text"><strong>AUCUN REMBOURSEMENT</strong> en cas d'annulation. En signant, vous confirmez l'exactitude des informations et acceptez les conditions du Camp de Jour Karaté.</div>
               </div>
-
               <div className="form-group" style={{ marginBottom: 6 }}>
                 <label>Signature du parent responsable *</label>
                 <div style={{ border: "2px solid #ece5db", borderBottom: "3px solid #FFD700", borderRadius: "12px 12px 4px 4px", background: "#fdfaf7", height: 70, display: "flex", alignItems: "flex-end", padding: "8px 14px", position: "relative" }}>
@@ -1018,7 +1026,6 @@ export default function CampKarate() {
               <div style={{ color: "#aaa", fontSize: ".75rem", fontWeight: 800, marginBottom: 20, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 Date : {new Date().toLocaleDateString("fr-CA")}
               </div>
-
               <div className="btn-row">
                 <button type="button" className="btn btn-secondary" onClick={() => setStep(2)}>← Retour</button>
                 <button type="button" className="btn btn-primary" onClick={next}>Continuer →</button>
@@ -1026,12 +1033,11 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 4 : VÉRIFICATION ─────────────────────────────────────── */}
+          {/* ── STEP 4 : VÉRIFICATION ── */}
           {step === 4 && (
             <div className="card">
               <div className="section-title">Vérification 🔍</div>
               <div className="section-sub">Vérifiez vos informations avant de procéder au paiement.</div>
-
               {/* Semaines */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -1043,7 +1049,6 @@ export default function CampKarate() {
                 </div>
               </div>
               <hr style={{ border: "none", borderTop: "1.5px solid #f0e8df", marginBottom: 20 }} />
-
               {/* Enfants */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -1062,16 +1067,13 @@ export default function CampKarate() {
                       <div><span style={{ color: "#aaa", fontWeight: 700 }}>DDN : </span><span style={{ fontWeight: 800 }}>{c.dobA}-{pad2(c.dobM)}-{pad2(c.dobJ)}</span></div>
                       <div style={{ gridColumn: "1/-1" }}><span style={{ color: "#aaa", fontWeight: 700 }}>Médication : </span><span style={{ fontWeight: 800 }}>{c.medication}</span></div>
                       <div style={{ gridColumn: "1/-1" }}><span style={{ color: "#aaa", fontWeight: 700 }}>Allergies : </span><span style={{ fontWeight: 800 }}>{c.allergies}</span></div>
-                      <div style={{ gridColumn: "1/-1" }}><span style={{ color: "#aaa", fontWeight: 700 }}>Conditions : </span><span style={{ fontWeight: 800 }}>
-                        {[c.tdah && "TDAH", c.tourette && "Tourette", c.tsa && "TSA", c.asthme && "Asthme", c.rien && "Aucune"].filter(Boolean).join(", ")}
-                      </span></div>
+                      <div style={{ gridColumn: "1/-1" }}><span style={{ color: "#aaa", fontWeight: 700 }}>Conditions : </span><span style={{ fontWeight: 800 }}>{[c.tdah && "TDAH", c.tourette && "Tourette", c.tsa && "TSA", c.asthme && "Asthme", c.rien && "Aucune"].filter(Boolean).join(", ")}</span></div>
                       {c.autres && <div style={{ gridColumn: "1/-1" }}><span style={{ color: "#aaa", fontWeight: 700 }}>Autres : </span><span style={{ fontWeight: 800 }}>{c.autres}</span></div>}
                     </div>
                   </div>
                 ))}
               </div>
               <hr style={{ border: "none", borderTop: "1.5px solid #f0e8df", marginBottom: 20 }} />
-
               {/* Tuteur */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -1092,7 +1094,6 @@ export default function CampKarate() {
                 </div>
               </div>
               <hr style={{ border: "none", borderTop: "1.5px solid #f0e8df", marginBottom: 20 }} />
-
               {/* Options */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -1100,24 +1101,18 @@ export default function CampKarate() {
                   <button type="button" className="btn-remove" onClick={() => { setReturnToVerif(true); resetCheckout(); setStep(3); }}>✏️ Modifier</button>
                 </div>
                 <div style={{ background: "#fdfaf7", border: "1.5px solid #ece5db", borderRadius: 12, padding: "14px 16px", fontSize: "0.88rem" }}>
-                  {nbGiftedShirts > 0 && (
-                    <div style={{ marginBottom: 8, color: "#22c55e", fontWeight: 800 }}>
-                      🎁 {nbGiftedShirts} t-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""} — {children.map((c, i) => `${c.firstName || `Enfant ${i + 1}`} : ${extras.tshirts[i]?.size || "?"} ${extras.tshirts[i]?.type || ""}`).join(" | ")}
-                    </div>
-                  )}
+                  {nbGiftedShirts > 0 && <div style={{ marginBottom: 8, color: "#22c55e", fontWeight: 800 }}>🎁 {nbGiftedShirts} t-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""} — {children.map((c, i) => `${c.firstName || `Enfant ${i + 1}`} : ${extras.tshirts[i]?.size || "?"} ${extras.tshirts[i]?.type || ""}`).join(" | ")}</div>}
                   <div style={{ marginBottom: 8 }}>
                     <span style={{ color: "#aaa", fontWeight: 700 }}>Extras payants : </span>
                     {nbPaidShirts > 0
                       ? <span style={{ fontWeight: 800 }}>{extras.tshirts.map((t, i) => t.want ? `${children[i]?.firstName || `Enfant ${i + 1}`} · ${t.qty || 1}× ${t.size2} ${t.type2}` : null).filter(Boolean).join(" | ")}</span>
-                      : <span style={{ fontWeight: 800, color: "#888" }}>Aucun</span>
-                    }
+                      : <span style={{ fontWeight: 800, color: "#888" }}>Aucun</span>}
                   </div>
                   <div><span style={{ color: "#aaa", fontWeight: 700 }}>Photos : </span><span style={{ fontWeight: 800, color: extras.photo === "accepte" ? "#22c55e" : "#CC0000" }}>{extras.photo === "accepte" ? "✓ Autorisées" : "✗ Refusées"}</span></div>
                   <div style={{ marginTop: 8 }}><span style={{ color: "#aaa", fontWeight: 700 }}>Signature : </span><span style={{ fontWeight: 800, fontStyle: "italic" }}>{extras.signature}</span></div>
                 </div>
               </div>
               <hr style={{ border: "none", borderTop: "1.5px solid #f0e8df", marginBottom: 20 }} />
-
               {/* Total */}
               <div style={{ background: "linear-gradient(135deg,#fff5f5,#fffbe6)", border: "2px solid #ffd0d0", borderRadius: 16, padding: "16px 20px", marginBottom: 24 }}>
                 <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1rem", color: "#1a0000", marginBottom: 12 }}>💰 Résumé du montant</div>
@@ -1128,31 +1123,16 @@ export default function CampKarate() {
                   </div>
                 ))}
                 {nbPaidShirts > 0 && <>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}>
-                    <span style={{ color: "#666", fontWeight: 700 }}>T-shirts ({nbPaidShirts} × {fmt(TSHIRT_PRICE)} $)</span>
-                    <span style={{ fontWeight: 800 }}>{fmt(tshirtSousTotal)} $</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}>
-                    <span style={{ color: "#666", fontWeight: 700 }}>TPS (5 %)</span>
-                    <span style={{ fontWeight: 800 }}>{fmt(tshirtTPS)} $</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}>
-                    <span style={{ color: "#666", fontWeight: 700 }}>TVQ (9,975 %)</span>
-                    <span style={{ fontWeight: 800 }}>{fmt(tshirtTVQ)} $</span>
-                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}><span style={{ color: "#666", fontWeight: 700 }}>T-shirts ({nbPaidShirts} × {fmt(TSHIRT_PRICE)} $)</span><span style={{ fontWeight: 800 }}>{fmt(tshirtSousTotal)} $</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}><span style={{ color: "#666", fontWeight: 700 }}>TPS (5 %)</span><span style={{ fontWeight: 800 }}>{fmt(tshirtTPS)} $</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}><span style={{ color: "#666", fontWeight: 700 }}>TVQ (9,975 %)</span><span style={{ fontWeight: 800 }}>{fmt(tshirtTVQ)} $</span></div>
                 </>}
-                {nbGiftedShirts > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}>
-                    <span style={{ color: "#22c55e", fontWeight: 700 }}>🎁 {nbGiftedShirts} t-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""}</span>
-                    <span style={{ fontWeight: 800, color: "#22c55e" }}>Inclus</span>
-                  </div>
-                )}
+                {nbGiftedShirts > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", padding: "4px 0", borderBottom: "1.5px dashed #ece5db" }}><span style={{ color: "#22c55e", fontWeight: 700 }}>🎁 {nbGiftedShirts} t-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""}</span><span style={{ fontWeight: 800, color: "#22c55e" }}>Inclus</span></div>}
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", marginTop: 4, borderTop: "3px solid #CC0000" }}>
                   <span style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem", color: "#1a0000" }}>Total</span>
                   <span style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.3rem", color: "#CC0000" }}>{fmt(total)} $</span>
                 </div>
               </div>
-
               <div className="btn-row">
                 <button type="button" className="btn btn-secondary" onClick={() => setStep(3)}>← Retour</button>
                 <button type="button" className="btn btn-primary btn-lg" onClick={next}>Tout est correct — Payer →</button>
@@ -1160,12 +1140,11 @@ export default function CampKarate() {
             </div>
           )}
 
-          {/* ── STEP 5 : PAIEMENT STRIPE ──────────────────────────────────── */}
+          {/* ── STEP 5 : PAIEMENT ── */}
           {step === 5 && (
             <div className="card">
               <div className="section-title">Paiement 💳</div>
               <div className="section-sub">Saisissez vos informations de paiement pour confirmer votre inscription.</div>
-
               <div className="receipt-box">
                 <div className="receipt-title">🧾 Récapitulatif de votre commande</div>
                 {children.map((c, i) => (
@@ -1174,244 +1153,89 @@ export default function CampKarate() {
                     <span className="rl-val">{fmt(selectedWeeks.length * priceFor(i))} $</span>
                   </div>
                 ))}
-                {nbGiftedShirts > 0 && (
-                  <div className="receipt-line">
-                    <span className="rl-label" style={{ color: "#22c55e" }}>🎁 {nbGiftedShirts} t-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""} (2 sem. ou +)</span>
-                    <span className="rl-val" style={{ color: "#22c55e" }}>Inclus</span>
-                  </div>
-                )}
+                {nbGiftedShirts > 0 && <div className="receipt-line"><span className="rl-label" style={{ color: "#22c55e" }}>🎁 {nbGiftedShirts} t-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""} (2 sem. ou +)</span><span className="rl-val" style={{ color: "#22c55e" }}>Inclus</span></div>}
                 {nbPaidShirts > 0 && <>
-                  <div className="receipt-line">
-                    <span className="rl-label">{nbPaidShirts} t-shirt{nbPaidShirts > 1 ? "s" : ""} supp. × {fmt(TSHIRT_PRICE)} $</span>
-                    <span className="rl-val">{fmt(tshirtSousTotal)} $</span>
-                  </div>
-                  <div className="receipt-line">
-                    <span className="rl-label" style={{ color: "#aaa" }}>TPS 5 %</span>
-                    <span className="rl-val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span>
-                  </div>
-                  <div className="receipt-line">
-                    <span className="rl-label" style={{ color: "#aaa" }}>TVQ 9,975 %</span>
-                    <span className="rl-val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span>
-                  </div>
-                  <div className="receipt-line subtotal">
-                    <span className="rl-label">Sous-total extras</span>
-                    <span className="rl-val">{fmt(tshirtTotal)} $</span>
-                  </div>
+                  <div className="receipt-line"><span className="rl-label">{nbPaidShirts} t-shirt{nbPaidShirts > 1 ? "s" : ""} supp. × {fmt(TSHIRT_PRICE)} $</span><span className="rl-val">{fmt(tshirtSousTotal)} $</span></div>
+                  <div className="receipt-line"><span className="rl-label" style={{ color: "#aaa" }}>TPS 5 %</span><span className="rl-val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span></div>
+                  <div className="receipt-line"><span className="rl-label" style={{ color: "#aaa" }}>TVQ 9,975 %</span><span className="rl-val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span></div>
+                  <div className="receipt-line subtotal"><span className="rl-label">Sous-total extras</span><span className="rl-val">{fmt(tshirtTotal)} $</span></div>
                 </>}
-                <div className="receipt-line grand-total">
-                  <span className="rl-label">Total</span>
-                  <span className="rl-val">{fmt(total)} $</span>
-                </div>
+                <div className="receipt-line grand-total"><span className="rl-label">Total</span><span className="rl-val">{fmt(total)} $</span></div>
               </div>
-
               {clientSecretError && (
-                <div className="stripe-error">
-                  ⚠️ {clientSecretError}
+                <div className="stripe-error">⚠️ {clientSecretError}
                   <button type="button" style={{ marginLeft: 12, background: "none", border: "none", color: "#CC0000", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}
-                    onClick={() => { setClientSecret(null); setClientSecretError(null); setRetryTrigger(t => t + 1); }}>
-                    Réessayer
-                  </button>
+                    onClick={() => { setClientSecret(null); setClientSecretError(null); setRetryTrigger(t => t + 1); }}>Réessayer</button>
                 </div>
               )}
-              {!clientSecret && !clientSecretError && (
-                <div style={{ textAlign: "center", padding: "32px 0", color: "#888", fontWeight: 700 }}>⏳ Initialisation du paiement sécurisé...</div>
-              )}
+              {!clientSecret && !clientSecretError && <div style={{ textAlign: "center", padding: "32px 0", color: "#888", fontWeight: 700 }}>⏳ Initialisation du paiement sécurisé...</div>}
               {clientSecret && (
-                <Elements
-                  stripe={stripePromise}
-                  options={{
-                    clientSecret,
-                    appearance: {
-                      theme: "night",
-                      variables: {
-                        colorPrimary: "#CC0000",
-                        colorBackground: "#1a0000",
-                        colorText: "#ffffff",
-                        colorDanger: "#ff4444",
-                        fontFamily: "Nunito, sans-serif",
-                        borderRadius: "12px",
-                      },
-                    },
-                    locale: "fr-CA",
-                  }}
-                >
-                  <StripePaymentForm
-                    total={total}
-                    onSuccess={handlePaymentSuccess}
-                    onBack={() => { setStep(4); resetCheckout(); }}
-                    loading={loading}
-                    setLoading={setLoading}
-                  />
+                <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "night", variables: { colorPrimary: "#CC0000", colorBackground: "#1a0000", colorText: "#ffffff", colorDanger: "#ff4444", fontFamily: "Nunito, sans-serif", borderRadius: "12px" } }, locale: "fr-CA" }}>
+                  <StripePaymentForm total={total} onSuccess={handlePaymentSuccess} onBack={() => { setStep(4); resetCheckout(); }} loading={loading} setLoading={setLoading} />
                 </Elements>
               )}
             </div>
           )}
 
-          {/* ── STEP 6 : CONFIRMATION ─────────────────────────────────────── */}
+          {/* ── STEP 6 : CONFIRMATION ── */}
           {step === 6 && (
             <div className="card">
-
-              {/* Attente webhook */}
               {pollStatus === "waiting" && (
                 <div style={{ textAlign: "center", padding: "48px 24px" }}>
                   <div style={{ fontSize: "3rem", marginBottom: 20, animation: "bounce 1s ease infinite" }}>⏳</div>
-                  <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.6rem", color: "#1a0000", marginBottom: 12 }}>
-                    Paiement en cours de traitement…
-                  </div>
-                  <div style={{ color: "#888", fontWeight: 600, fontSize: "0.95rem", maxWidth: 400, margin: "0 auto 28px" }}>
-                    Votre carte a été débitée. Nous attendons la confirmation de Stripe pour enregistrer votre inscription. Cela prend habituellement quelques secondes.
-                  </div>
+                  <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.6rem", color: "#1a0000", marginBottom: 12 }}>Paiement en cours de traitement…</div>
+                  <div style={{ color: "#888", fontWeight: 600, fontSize: "0.95rem", maxWidth: 400, margin: "0 auto 28px" }}>Votre carte a été débitée. Nous attendons la confirmation de Stripe pour enregistrer votre inscription. Cela prend habituellement quelques secondes.</div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#CC0000", fontWeight: 800 }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
-                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                    </svg>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                     Vérification en cours…
                   </div>
                   <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
                 </div>
               )}
-
-              {/* Échec / timeout */}
               {pollStatus === "failed" && (
                 <div style={{ textAlign: "center", padding: "40px 24px" }}>
                   <div style={{ fontSize: "3rem", marginBottom: 16 }}>⚠️</div>
-                  <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.4rem", color: "#CC0000", marginBottom: 12 }}>
-                    Confirmation en attente
-                  </div>
+                  <div style={{ fontFamily: "'Fredoka One',cursive", fontSize: "1.4rem", color: "#CC0000", marginBottom: 12 }}>Confirmation en attente</div>
                   <div style={{ color: "#666", fontWeight: 600, fontSize: "0.92rem", maxWidth: 420, margin: "0 auto 24px", lineHeight: 1.7 }}>
                     Votre paiement a été accepté, mais la confirmation d'inscription n'a pas encore été reçue.
                     Identifiant : <code style={{ background: "#f5f5f5", padding: "2px 8px", borderRadius: 6 }}>{paymentIntentId}</code>
                   </div>
-                  <button type="button" className="btn btn-secondary"
-                    onClick={() => { setPollStatus("waiting"); setPollTrigger(t => t + 1); }}>
-                    🔄 Vérifier à nouveau
-                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => { setPollStatus("waiting"); setPollTrigger(t => t + 1); }}>🔄 Vérifier à nouveau</button>
                 </div>
               )}
-
-              {/* ── Inscription confirmée ── */}
               {pollStatus === "confirmed" && (
                 <>
                   <div className="confetti-area">
                     <div className="confetti-emoji">🥋</div>
-                    {/* ✅ Titre + Dojo de Lavaltrie */}
                     <div className="confirm-title">Inscription confirmée !</div>
                     <div className="confirm-dojo">Dojo de Lavaltrie</div>
                     <div className="confirm-sub">
                       Inscription confirmée pour <strong>{children.map((c, i) => c.firstName || `Enfant ${i + 1}`).join(", ")}</strong>
                     </div>
                   </div>
-
                   <div className="confirm-summary" id="confirmation-content">
-                    <div className="confirm-row">
-                      <span className="key">Enfants inscrits</span>
-                      <span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {priceFor(i)} $/sem.</span>)}</span>
-                    </div>
-                    <div className="confirm-row">
-                      <span className="key">Semaines</span>
-                      <span className="val">{selectedWeeks.map(id => { const w = getWeekById(id); return <span key={id} className="week-tag">{w?.label}</span>; })}</span>
-                    </div>
-                    <div className="confirm-row">
-                      <span className="key">Sous-total camps</span>
-                      <span className="val">{fmt(subTotal)} $</span>
-                    </div>
-                    {nbGiftedShirts > 0 && (
-                      <div className="confirm-row">
-                        <span className="key" style={{ color: "#22c55e" }}>🎁 T-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""}</span>
-                        <span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {extras.tshirts[i]?.size || "?"} {extras.tshirts[i]?.type || ""}</span>)}</span>
-                      </div>
-                    )}
+                    <div className="confirm-row"><span className="key">Enfants inscrits</span><span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {priceFor(i)} $/sem.</span>)}</span></div>
+                    <div className="confirm-row"><span className="key">Semaines</span><span className="val">{selectedWeeks.map(id => { const w = getWeekById(id); return <span key={id} className="week-tag">{w?.label}</span>; })}</span></div>
+                    <div className="confirm-row"><span className="key">Sous-total camps</span><span className="val">{fmt(subTotal)} $</span></div>
+                    {nbGiftedShirts > 0 && <div className="confirm-row"><span className="key" style={{ color: "#22c55e" }}>🎁 T-shirt{nbGiftedShirts > 1 ? "s" : ""} offert{nbGiftedShirts > 1 ? "s" : ""}</span><span className="val">{children.map((c, i) => <span key={c.id} className="child-tag">{c.firstName || `Enfant ${i + 1}`} · {extras.tshirts[i]?.size || "?"} {extras.tshirts[i]?.type || ""}</span>)}</span></div>}
                     {nbPaidShirts > 0 && <>
-                      <div className="confirm-row">
-                        <span className="key">T-shirts supplémentaires</span>
-                        <span className="val">{extras.tshirts.map((t, i) => t.want ? <span key={i} className="child-tag">{children[i]?.firstName || `Enfant ${i + 1}`} · {t.qty || 1}× {t.size2} {t.type2}</span> : null)}</span>
-                      </div>
-                      <div className="confirm-row">
-                        <span className="key">{nbPaidShirts} × {fmt(TSHIRT_PRICE)} $ (sous-total)</span>
-                        <span className="val">{fmt(tshirtSousTotal)} $</span>
-                      </div>
-                      <div className="confirm-row">
-                        <span className="key" style={{ color: "#aaa" }}>TPS (5 %)</span>
-                        <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span>
-                      </div>
-                      <div className="confirm-row">
-                        <span className="key" style={{ color: "#aaa" }}>TVQ (9,975 %)</span>
-                        <span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span>
-                      </div>
-                      <div className="confirm-row">
-                        <span className="key">Total t-shirts avec taxes</span>
-                        <span className="val">{fmt(tshirtTotal)} $</span>
-                      </div>
+                      <div className="confirm-row"><span className="key">T-shirts supplémentaires</span><span className="val">{extras.tshirts.map((t, i) => t.want ? <span key={i} className="child-tag">{children[i]?.firstName || `Enfant ${i + 1}`} · {t.qty || 1}× {t.size2} {t.type2}</span> : null)}</span></div>
+                      <div className="confirm-row"><span className="key">{nbPaidShirts} × {fmt(TSHIRT_PRICE)} $ (sous-total)</span><span className="val">{fmt(tshirtSousTotal)} $</span></div>
+                      <div className="confirm-row"><span className="key" style={{ color: "#aaa" }}>TPS (5 %)</span><span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTPS)} $</span></div>
+                      <div className="confirm-row"><span className="key" style={{ color: "#aaa" }}>TVQ (9,975 %)</span><span className="val" style={{ color: "#aaa" }}>{fmt(tshirtTVQ)} $</span></div>
+                      <div className="confirm-row"><span className="key">Total t-shirts avec taxes</span><span className="val">{fmt(tshirtTotal)} $</span></div>
                     </>}
-                    <div className="confirm-row">
-                      <span className="key">Photos</span>
-                      <span className="val" style={{ color: extras.photo === "accepte" ? "#22c55e" : "#CC0000" }}>{extras.photo === "accepte" ? "✓ Autorisées" : "✗ Refusées"}</span>
-                    </div>
-                    <div className="confirm-row">
-                      <span className="key">Total payé</span>
-                      <span className="val" style={{ color: "#CC0000", fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem" }}>{fmt(total)} $</span>
-                    </div>
-                    <div className="confirm-row">
-                      <span className="key">Mode de paiement</span>
-                      <span className="val">Carte (Stripe)</span>
-                    </div>
-                    <div className="confirm-row">
-                      <span className="key">Courriel</span>
-                      <span className="val">{tutor.courriel}</span>
-                    </div>
-                    <div className="confirm-row">
-                      <span className="key">N° de confirmation</span>
-                      <span className="val" style={{ color: "#CC0000", fontFamily: "monospace" }}>{confNum}</span>
-                    </div>
+                    <div className="confirm-row"><span className="key">Photos</span><span className="val" style={{ color: extras.photo === "accepte" ? "#22c55e" : "#CC0000" }}>{extras.photo === "accepte" ? "✓ Autorisées" : "✗ Refusées"}</span></div>
+                    <div className="confirm-row"><span className="key">Total payé</span><span className="val" style={{ color: "#CC0000", fontFamily: "'Fredoka One',cursive", fontSize: "1.1rem" }}>{fmt(total)} $</span></div>
+                    <div className="confirm-row"><span className="key">Mode de paiement</span><span className="val">Carte (Stripe) — Paiement complet</span></div>
+                    <div className="confirm-row"><span className="key">Date du paiement</span><span className="val">{paymentDate}</span></div>
+                    <div className="confirm-row"><span className="key">Courriel</span><span className="val">{tutor.courriel}</span></div>
+                    <div className="confirm-row"><span className="key">N° de confirmation</span><span className="val" style={{ color: "#CC0000", fontFamily: "monospace" }}>{confNum}</span></div>
                   </div>
-
                   <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }} className="no-print">
-                    <button type="button" className="btn btn-secondary" onClick={() => window.print()} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      🖨️ Imprimer
-                    </button>
-                    {/* ✅ Popup PDF avec Dojo de Lavaltrie */}
-                    <button type="button" className="btn btn-secondary" onClick={() => {
-                      const el = document.getElementById("confirmation-content");
-                      if (!el) return;
-                      const rows = [];
-                      el.querySelectorAll(".confirm-row").forEach(row => {
-                        const key = row.querySelector(".key")?.innerText || "";
-                        const val = row.querySelector(".val")?.innerText || "";
-                        rows.push(`<tr><td style="padding:8px 14px;color:#888;font-weight:700;border-bottom:1px dashed #ffe066;width:50%;font-size:13px">${key}</td><td style="padding:8px 14px;font-weight:800;border-bottom:1px dashed #ffe066;text-align:right;font-size:13px">${val}</td></tr>`);
-                      });
-                      const win = window.open("", "_blank", "width=700,height=900");
-                      if (!win) { alert("Veuillez autoriser les fenêtres pop-up pour sauvegarder le PDF."); return; }
-                      win.document.write(`<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8">
-<title>Confirmation ${confNum}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:Arial,sans-serif;background:#fff;color:#1a0000;padding:32px;}
-  .badge{background:#CC0000;color:white;padding:5px 16px;border-radius:20px;font-size:12px;letter-spacing:1px;display:inline-block;margin-bottom:14px;}
-  h1{font-size:2rem;color:#CC0000;margin-bottom:4px;}
-  h2{font-size:1.1rem;color:#CC0000;font-weight:700;margin-bottom:4px;}
-  h3{font-size:0.95rem;color:#888;font-weight:600;margin-bottom:20px;}
-  table{width:100%;border-collapse:collapse;background:#fffbe6;border:2px solid #FFD700;border-radius:8px;overflow:hidden;margin-bottom:20px;}
-  .footer{font-size:11px;color:#aaa;text-align:center;margin-bottom:20px;}
-  .btn-pdf{display:block;width:100%;padding:14px;background:#CC0000;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;font-family:Arial;}
-  @media print{.btn-pdf{display:none!important;}}
-</style></head><body>
-<div class="badge">🥋 Inscriptions · Été 2026</div>
-<h1>Camp de Jour Karaté</h1>
-<h2>Dojo de Lavaltrie</h2>
-<h3>Confirmation d'inscription — ${confNum}</h3>
-<table>${rows.join("")}</table>
-<div class="footer">Ce document confirme votre inscription au Camp de Jour Karaté — Dojo de Lavaltrie — Été 2026.</div>
-<button class="btn-pdf" onclick="window.print()">🖨️ Enregistrer en PDF / Imprimer</button>
-</body></html>`);
-                      win.document.close();
-                      win.focus();
-                      setTimeout(() => { win.print(); }, 300);
-                    }} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      💾 Sauvegarder en PDF
-                    </button>
+                    <button type="button" className="btn btn-secondary" onClick={() => window.print()} style={{ display: "flex", alignItems: "center", gap: 8 }}>🖨️ Imprimer</button>
+                    <button type="button" className="btn btn-secondary" onClick={openPdfPopup} style={{ display: "flex", alignItems: "center", gap: 8 }}>💾 Sauvegarder en PDF</button>
                   </div>
-
                   <div style={{ textAlign: "center" }} className="no-print">
                     <button type="button" className="btn btn-primary btn-lg" onClick={() => {
                       setStep(0); setSel([]);
@@ -1420,17 +1244,14 @@ export default function CampKarate() {
                       setExtras({ photo: null, signature: "", tshirts: [{ want: false, size: "", type: "", size2: "", type2: "", qty: 1 }] });
                       resetCheckout();
                       setReturnToVerif(false);
-                      setConfNum("");
-                      setPollStatus("waiting");
-                      setPollTrigger(0);
-                      setRetryTrigger(0);
+                      setConfNum(""); setPaymentDate("");
+                      setPollStatus("waiting"); setPollTrigger(0); setRetryTrigger(0);
                     }}>➕ Nouvelle inscription</button>
                   </div>
                 </>
               )}
             </div>
           )}
-
         </div>
       </div>
     </>
