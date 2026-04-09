@@ -1,19 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
-const TSHIRT_PRICE = 17.40;
-const TPS_RATE     = 0.05;
-const TVQ_RATE     = 0.09975;
+const TSHIRT_PRICE  = 17.40;
+const TPS_RATE      = 0.05;
+const TVQ_RATE      = 0.09975;
 const PRICE_BY_RANK = [165, 150, 140];
-const priceFor = (i) => PRICE_BY_RANK[Math.min(i, PRICE_BY_RANK.length - 1)];
-const fmt = (n) => Number(n).toFixed(2);
+const priceFor      = (i) => PRICE_BY_RANK[Math.min(i, PRICE_BY_RANK.length - 1)];
+const fmt           = (n) => Number(n).toFixed(2);
 
 export default function AdminConfirmations() {
   const [reservations, setReservations] = useState([]);
@@ -25,29 +19,8 @@ export default function AdminConfirmations() {
 
   const loadReservations = async () => {
     setLoading(true);
-    const { data, error } = await supabaseAdmin
-      .from("reservations")
-      .select(`
-        id, reservation_number, status, parent_full_name, parent_name_2,
-        email, phone, phone2, address_line1, city, postal_code,
-        total_amount, payment_option, tax_receipt_requested, tax_receipt_name,
-        stripe_payment_intent_id, created_at, updated_at,
-        reservation_children (
-          id, first_name, last_name, birth_date, age, gender, ramq,
-          allergies, medical_notes, tdah, tourette, tsa, asthme, aucune_condition
-        ),
-        reservation_weeks (
-          week_id,
-          weeks ( id, label, starts_on, ends_on )
-        ),
-        reservation_tshirts (
-          id, is_gift, size, shirt_type, quantity, unit_price
-        )
-      `)
-      .in("status", ["confirmed", "paid"])
-      .order("created_at", { ascending: false });
-
-    if (error) { console.error(error); setLoading(false); return; }
+    const res  = await fetch("/api/admin/reservations");
+    const data = await res.json();
     setReservations(data || []);
     setLoading(false);
   };
@@ -79,7 +52,6 @@ export default function AdminConfirmations() {
       return `${w.label} (${s} – ${e})`;
     };
 
-    // Calcul des montants
     const nbWeeks       = weeks.length;
     const campsSubtotal = children.reduce((sum, _, i) => sum + nbWeeks * priceFor(i), 0);
     const paidShirts    = tshirts.filter(t => !t.is_gift);
@@ -87,7 +59,6 @@ export default function AdminConfirmations() {
     const tshirtSub     = nbPaid * TSHIRT_PRICE;
     const tshirtTPS     = tshirtSub * TPS_RATE;
     const tshirtTVQ     = tshirtSub * TVQ_RATE;
-    const tshirtTotal   = tshirtSub + tshirtTPS + tshirtTVQ;
     const giftShirts    = tshirts.filter(t => t.is_gift);
 
     const campRows = children.map((c, i) =>
@@ -101,38 +72,34 @@ export default function AdminConfirmations() {
       </tr>`
     ).join("");
 
-    const giftRows = giftShirts.length > 0
-      ? giftShirts.map(t => {
-          const child = children.find((_, i) => tshirts.filter(ts => ts.is_gift)[0] === t) || null;
-          return `<tr>
-            <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#22c55e;font-weight:600">
-              🎁 T-shirt offert — ${t.size || "?"} ${t.shirt_type || ""}
-            </td>
-            <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#22c55e">
-              Inclus
-            </td>
-          </tr>`;
-        }).join("")
-      : "";
+    const giftRows = giftShirts.map(t =>
+      `<tr>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#22c55e;font-weight:600">
+          🎁 T-shirt offert — ${t.size || "?"} ${t.shirt_type || ""}
+        </td>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#22c55e">
+          Inclus
+        </td>
+      </tr>`
+    ).join("");
 
-    const paidShirtRows = nbPaid > 0
-      ? `<tr>
-          <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#555;font-weight:600">
-            T-shirts supplémentaires (${nbPaid} × ${fmt(TSHIRT_PRICE)} $)
-          </td>
-          <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700">
-            ${fmt(tshirtSub)} $
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#888;font-weight:600">TPS (5 %) — N° 711574897 RC 0001</td>
-          <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#888">${fmt(tshirtTPS)} $</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#888;font-weight:600">TVQ (9,975 %) — N° 1224802931 IC 0001</td>
-          <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#888">${fmt(tshirtTVQ)} $</td>
-        </tr>`
-      : "";
+    const paidShirtRows = nbPaid > 0 ? `
+      <tr>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#555;font-weight:600">
+          T-shirts supplémentaires (${nbPaid} × ${fmt(TSHIRT_PRICE)} $)
+        </td>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700">
+          ${fmt(tshirtSub)} $
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#888;font-weight:600">TPS (5 %) — N° 711574897 RC 0001</td>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#888">${fmt(tshirtTPS)} $</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;font-size:13px;color:#888;font-weight:600">TVQ (9,975 %) — N° 1224802931 IC 0001</td>
+        <td style="padding:8px 14px;border-bottom:1px solid #f0e0a0;text-align:right;font-size:13px;font-weight:700;color:#888">${fmt(tshirtTVQ)} $</td>
+      </tr>` : "";
 
     const win = window.open("", "_blank", "width=760,height=1050");
     if (!win) { alert("Autorisez les pop-ups pour générer le PDF."); return; }
@@ -203,9 +170,7 @@ export default function AdminConfirmations() {
 <div class="section">
   <div class="section-label">Enfant(s) inscrit(s)</div>
   <div class="info-box">
-    ${children.map((c, i) => `
-      <strong>${c.first_name} ${c.last_name}</strong> — ${c.age || "?"} ans · ${c.gender || "?"}<br>
-    `).join("")}
+    ${children.map(c => `<strong>${c.first_name} ${c.last_name}</strong> — ${c.age || "?"} ans · ${c.gender || "?"}<br>`).join("")}
   </div>
 </div>
 
@@ -226,7 +191,7 @@ export default function AdminConfirmations() {
       ${paidShirtRows}
       <tr class="total-row">
         <td>TOTAL PAYÉ — Paiement unique et complet</td>
-        <td style="text-align:right">${fmt(r.total_amount || (campsSubtotal + tshirtTotal))} $</td>
+        <td style="text-align:right">${fmt(r.total_amount || (campsSubtotal + tshirtSub + tshirtTPS + tshirtTVQ))} $</td>
       </tr>
     </tbody>
   </table>
@@ -276,11 +241,10 @@ export default function AdminConfirmations() {
     .resa-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
     .btn-pdf { background: #CC0000; color: white; border: none; border-radius: 12px; padding: 10px 20px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
     .btn-pdf:hover { background: #aa0000; transform: translateY(-1px); }
-    .btn-sent { background: none; border: 2px solid #22c55e; border-radius: 12px; padding: 6px 14px; color: #22c55e; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
-    .btn-sent:hover { background: #f0fff4; }
+    .btn-sent { background: none; border: 2px solid #22c55e; border-radius: 12px; padding: 6px 14px; color: #22c55e; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
     .sent-badge { background: #22c55e; color: white; border-radius: 20px; padding: 3px 10px; font-size: 0.75rem; font-weight: 800; }
     .loading { text-align: center; padding: 60px; color: #888; font-weight: 700; font-size: 1.1rem; }
-    .children-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .children-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .child-tag { background: #fff5f5; border: 1.5px solid #ffcccc; color: #CC0000; font-size: 0.75rem; font-weight: 800; padding: 2px 8px; border-radius: 20px; }
     .week-tag { background: #fffbe6; border: 1.5px solid #FFD700; color: #b8960a; font-size: 0.75rem; font-weight: 800; padding: 2px 8px; border-radius: 20px; }
   `;
@@ -350,7 +314,6 @@ export default function AdminConfirmations() {
                     {isSent && <span className="sent-badge" style={{ marginLeft: 8 }}>✓ PDF généré</span>}
                   </div>
                 </div>
-
                 <div style={{ textAlign: "right" }}>
                   <div className="resa-total">{fmt(r.total_amount || 0)} $</div>
                   <div className="resa-actions" style={{ marginTop: 10 }}>
@@ -373,7 +336,6 @@ export default function AdminConfirmations() {
               </div>
             );
           })}
-
           {!loading && filtered.length === 0 && (
             <div style={{ textAlign: "center", padding: "40px", color: "#888", fontWeight: 700 }}>
               Aucune réservation trouvée.
