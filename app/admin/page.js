@@ -14,6 +14,9 @@ export default function AdminConfirmations() {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState("");
   const [sent, setSent]                 = useState({});
+  const [mode, setMode]                 = useState("pdf"); // "pdf" | "email"
+  const [copied, setCopied]             = useState({});
+  const [allCopied, setAllCopied]       = useState(false);
 
   useEffect(() => { loadReservations(); }, []);
 
@@ -30,6 +33,19 @@ export default function AdminConfirmations() {
     r.parent_full_name?.toLowerCase().includes(search.toLowerCase()) ||
     r.email?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const copyEmail = (id, email) => {
+    navigator.clipboard.writeText(email);
+    setCopied(c => ({ ...c, [id]: true }));
+    setTimeout(() => setCopied(c => ({ ...c, [id]: false })), 2000);
+  };
+
+  const copyAll = () => {
+    const all = filtered.map(r => `${r.parent_full_name} <${r.email}>`).join("\n");
+    navigator.clipboard.writeText(all);
+    setAllCopied(true);
+    setTimeout(() => setAllCopied(false), 2500);
+  };
 
   const generatePDF = (r) => {
     const children = r.reservation_children || [];
@@ -132,30 +148,19 @@ export default function AdminConfirmations() {
   .btn-pdf{display:block;width:100%;padding:14px;background:#CC0000;color:white;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;font-family:Arial;margin-top:18px;}
   @media print{.btn-pdf{display:none!important;}}
 </style></head><body>
-
 <div class="top">
   <div>
     <div class="org-name">Camp de Jour Karaté</div>
     <div class="org-sub">Dojo de Lavaltrie — Karaté Sunfuki</div>
-    <div class="org-details">
-      C-985 rue Notre-Dame<br>
-      Lavaltrie, QC &nbsp; J5T 1R4<br>
-      Tél. : 438-886-6270<br>
-      lavaltrie@karatesunfuki.com
-    </div>
+    <div class="org-details">C-985 rue Notre-Dame<br>Lavaltrie, QC &nbsp; J5T 1R4<br>Tél. : 438-886-6270<br>lavaltrie@karatesunfuki.com</div>
   </div>
   <div class="doc-right">
     <div class="doc-label">Confirmation &amp; Reçu de paiement</div>
     <div class="doc-num">${r.reservation_number}</div>
-    <div class="doc-date">
-      Date du paiement :<br>
-      <strong>${paymentDate}</strong><br>
-      Mode : Carte (Stripe) — Paiement complet
-    </div>
+    <div class="doc-date">Date du paiement :<br><strong>${paymentDate}</strong><br>Mode : Carte (Stripe) — Paiement complet</div>
     <div class="badge-paid">✓ Paiement complet reçu</div>
   </div>
 </div>
-
 <div class="section">
   <div class="section-label">Payeur</div>
   <div class="info-box">
@@ -166,29 +171,22 @@ export default function AdminConfirmations() {
     <strong>Tél. :</strong> ${r.phone || "—"}
   </div>
 </div>
-
 <div class="section">
   <div class="section-label">Enfant(s) inscrit(s)</div>
   <div class="info-box">
     ${children.map(c => `<strong>${c.first_name} ${c.last_name}</strong> — ${c.age || "?"} ans · ${c.gender || "?"}<br>`).join("")}
   </div>
 </div>
-
 <div class="section">
   <div class="section-label">Semaines sélectionnées</div>
-  <div class="info-box">
-    ${weeks.map(w => `• ${formatWeek(w)}`).join("<br>")}
-  </div>
+  <div class="info-box">${weeks.map(w => `• ${formatWeek(w)}`).join("<br>")}</div>
 </div>
-
 <div class="section">
   <div class="section-label">Détail de la commande</div>
   <table>
     <thead><tr><td>Description</td><td style="text-align:right">Montant</td></tr></thead>
     <tbody>
-      ${campRows}
-      ${giftRows}
-      ${paidShirtRows}
+      ${campRows}${giftRows}${paidShirtRows}
       <tr class="total-row">
         <td>TOTAL PAYÉ — Paiement unique et complet</td>
         <td style="text-align:right">${fmt(r.total_amount || (campsSubtotal + tshirtSub + tshirtTPS + tshirtTVQ))} $</td>
@@ -200,12 +198,10 @@ export default function AdminConfirmations() {
     : `<div class="tax-note">Les frais d'inscription au camp sont exempts de taxes (TPS N° 711574897 RC 0001 · TVQ N° 1224802931 IC 0001).</div>`
   }
 </div>
-
 <div class="footer">
   Ce document confirme votre inscription et votre paiement au Camp de Jour Karaté — Dojo de Lavaltrie — Été 2026.<br>
   Conservez ce reçu pour vos dossiers. &nbsp;|&nbsp; Questions : lavaltrie@karatesunfuki.com &nbsp;|&nbsp; 438-886-6270
 </div>
-
 <button class="btn-pdf" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
 </body></html>`);
     win.document.close();
@@ -221,6 +217,9 @@ export default function AdminConfirmations() {
     .admin-header { text-align: center; margin-bottom: 32px; }
     .admin-title { font-family: 'Fredoka One', cursive; font-size: 2rem; color: #1a0000; margin-bottom: 6px; }
     .admin-sub { color: #888; font-weight: 600; font-size: 0.95rem; }
+    .mode-toggle { display: flex; gap: 0; justify-content: center; margin-bottom: 28px; border: 2px solid #ece5db; border-radius: 14px; overflow: hidden; max-width: 320px; margin-left: auto; margin-right: auto; }
+    .mode-btn { flex: 1; padding: 12px 20px; border: none; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; background: white; color: #888; }
+    .mode-btn.active { background: #CC0000; color: white; }
     .search-bar { max-width: 600px; margin: 0 auto 28px; }
     .search-bar input { width: 100%; padding: 14px 20px; border: 2px solid #ece5db; border-radius: 14px; font-family: 'Nunito', sans-serif; font-size: 1rem; font-weight: 600; outline: none; }
     .search-bar input:focus { border-color: #CC0000; }
@@ -247,6 +246,23 @@ export default function AdminConfirmations() {
     .children-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .child-tag { background: #fff5f5; border: 1.5px solid #ffcccc; color: #CC0000; font-size: 0.75rem; font-weight: 800; padding: 2px 8px; border-radius: 20px; }
     .week-tag { background: #fffbe6; border: 1.5px solid #FFD700; color: #b8960a; font-size: 0.75rem; font-weight: 800; padding: 2px 8px; border-radius: 20px; }
+
+    /* MODE EMAIL */
+    .email-list { max-width: 700px; margin: 0 auto; }
+    .copy-all-bar { background: #1a0000; border-radius: 16px; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .copy-all-label { color: #aaa; font-weight: 700; font-size: 0.9rem; }
+    .copy-all-label span { color: white; font-family: 'Fredoka One', cursive; font-size: 1.1rem; }
+    .btn-copy-all { background: #FFD700; color: #1a0000; border: none; border-radius: 10px; padding: 10px 22px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; }
+    .btn-copy-all:hover { background: #f5c800; transform: translateY(-1px); }
+    .btn-copy-all.copied { background: #22c55e; color: white; }
+    .email-row { background: white; border: 2px solid #ece5db; border-radius: 14px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 10px; transition: all 0.2s; }
+    .email-row:hover { border-color: #CC0000; box-shadow: 0 4px 16px rgba(204,0,0,0.1); }
+    .email-row.copied { border-color: #22c55e; background: #f0fff4; }
+    .email-name { font-weight: 800; color: #1a0000; font-size: 0.95rem; margin-bottom: 2px; }
+    .email-addr { font-size: 0.88rem; color: #666; font-weight: 600; font-family: monospace; }
+    .btn-copy { background: none; border: 2px solid #ece5db; border-radius: 10px; padding: 8px 16px; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.82rem; color: #888; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .btn-copy:hover { border-color: #CC0000; color: #CC0000; }
+    .btn-copy.copied { border-color: #22c55e; color: #22c55e; background: #f0fff4; }
   `;
 
   return (
@@ -255,13 +271,22 @@ export default function AdminConfirmations() {
       <div className="admin-wrap">
         <div className="admin-header">
           <div className="admin-title">🥋 Admin — Confirmations</div>
-          <div className="admin-sub">Générez et envoyez les PDFs de confirmation à vos clients</div>
+          <div className="admin-sub">Gérez vos réservations confirmées</div>
+        </div>
+
+        <div className="mode-toggle">
+          <button className={`mode-btn ${mode === "pdf" ? "active" : ""}`} onClick={() => setMode("pdf")}>
+            💾 Mode PDF
+          </button>
+          <button className={`mode-btn ${mode === "email" ? "active" : ""}`} onClick={() => setMode("email")}>
+            📧 Mode envoi
+          </button>
         </div>
 
         <div className="stats">
           <div className="stat">
             <div className="stat-val">{reservations.length}</div>
-            <div className="stat-label">Réservations confirmées</div>
+            <div className="stat-label">Confirmées</div>
           </div>
           <div className="stat">
             <div className="stat-val">{Object.keys(sent).length}</div>
@@ -287,61 +312,101 @@ export default function AdminConfirmations() {
 
         {loading && <div className="loading">⏳ Chargement des réservations...</div>}
 
-        <div className="resa-list">
-          {filtered.map(r => {
-            const children = r.reservation_children || [];
-            const weeks    = [...new Map(
-              (r.reservation_weeks || []).filter(rw => rw.weeks).map(rw => [rw.weeks.id, rw.weeks])
-            ).values()];
-            const isSent = sent[r.id];
-
-            return (
-              <div key={r.id} className={`resa-card ${isSent ? "sent" : ""}`}>
-                <div className="resa-info">
-                  <div className="resa-num">{r.reservation_number}</div>
-                  <div className="resa-name">{r.parent_full_name}</div>
-                  <div className="resa-email">📧 {r.email} &nbsp;·&nbsp; 📞 {r.phone}</div>
-                  <div className="children-tags">
-                    {children.map(c => (
-                      <span key={c.id} className="child-tag">🥋 {c.first_name} {c.last_name}</span>
-                    ))}
-                    {weeks.map(w => (
-                      <span key={w.id} className="week-tag">📅 {w.label}</span>
-                    ))}
+        {/* ── MODE PDF ── */}
+        {mode === "pdf" && (
+          <div className="resa-list">
+            {filtered.map(r => {
+              const children = r.reservation_children || [];
+              const weeks    = [...new Map(
+                (r.reservation_weeks || []).filter(rw => rw.weeks).map(rw => [rw.weeks.id, rw.weeks])
+              ).values()];
+              const isSent = sent[r.id];
+              return (
+                <div key={r.id} className={`resa-card ${isSent ? "sent" : ""}`}>
+                  <div className="resa-info">
+                    <div className="resa-num">{r.reservation_number}</div>
+                    <div className="resa-name">{r.parent_full_name}</div>
+                    <div className="resa-email">📧 {r.email} &nbsp;·&nbsp; 📞 {r.phone}</div>
+                    <div className="children-tags">
+                      {children.map(c => (
+                        <span key={c.id} className="child-tag">🥋 {c.first_name} {c.last_name}</span>
+                      ))}
+                      {weeks.map(w => (
+                        <span key={w.id} className="week-tag">📅 {w.label}</span>
+                      ))}
+                    </div>
+                    <div className="resa-meta" style={{ marginTop: 6 }}>
+                      Inscrit le {new Date(r.created_at).toLocaleDateString("fr-CA", { day: "numeric", month: "long", year: "numeric" })}
+                      {isSent && <span className="sent-badge" style={{ marginLeft: 8 }}>✓ PDF généré</span>}
+                    </div>
                   </div>
-                  <div className="resa-meta" style={{ marginTop: 6 }}>
-                    Inscrit le {new Date(r.created_at).toLocaleDateString("fr-CA", { day: "numeric", month: "long", year: "numeric" })}
-                    {isSent && <span className="sent-badge" style={{ marginLeft: 8 }}>✓ PDF généré</span>}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div className="resa-total">{fmt(r.total_amount || 0)} $</div>
-                  <div className="resa-actions" style={{ marginTop: 10 }}>
-                    <button
-                      className="btn-pdf"
-                      onClick={() => { generatePDF(r); setSent(s => ({ ...s, [r.id]: true })); }}
-                    >
-                      💾 Générer PDF
-                    </button>
-                    {isSent && (
+                  <div style={{ textAlign: "right" }}>
+                    <div className="resa-total">{fmt(r.total_amount || 0)} $</div>
+                    <div className="resa-actions" style={{ marginTop: 10 }}>
                       <button
-                        className="btn-sent"
-                        onClick={() => setSent(s => { const n = { ...s }; delete n[r.id]; return n; })}
+                        className="btn-pdf"
+                        onClick={() => { generatePDF(r); setSent(s => ({ ...s, [r.id]: true })); }}
                       >
-                        ↩ Marquer non envoyé
+                        💾 Générer PDF
                       </button>
-                    )}
+                      {isSent && (
+                        <button
+                          className="btn-sent"
+                          onClick={() => setSent(s => { const n = { ...s }; delete n[r.id]; return n; })}
+                        >
+                          ↩ Marquer non envoyé
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+              );
+            })}
+            {!loading && filtered.length === 0 && (
+              <div style={{ textAlign: "center", padding: "40px", color: "#888", fontWeight: 700 }}>
+                Aucune réservation trouvée.
               </div>
-            );
-          })}
-          {!loading && filtered.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px", color: "#888", fontWeight: 700 }}>
-              Aucune réservation trouvée.
+            )}
+          </div>
+        )}
+
+        {/* ── MODE EMAIL ── */}
+        {mode === "email" && (
+          <div className="email-list">
+            <div className="copy-all-bar">
+              <div className="copy-all-label">
+                <span>{filtered.length}</span> courriels à envoyer
+              </div>
+              <button
+                className={`btn-copy-all ${allCopied ? "copied" : ""}`}
+                onClick={copyAll}
+              >
+                {allCopied ? "✓ Copié !" : "📋 Tout copier"}
+              </button>
             </div>
-          )}
-        </div>
+
+            {filtered.map(r => (
+              <div key={r.id} className={`email-row ${copied[r.id] ? "copied" : ""}`}>
+                <div>
+                  <div className="email-name">{r.parent_full_name}</div>
+                  <div className="email-addr">{r.email}</div>
+                </div>
+                <button
+                  className={`btn-copy ${copied[r.id] ? "copied" : ""}`}
+                  onClick={() => copyEmail(r.id, r.email)}
+                >
+                  {copied[r.id] ? "✓ Copié !" : "📋 Copier"}
+                </button>
+              </div>
+            ))}
+
+            {!loading && filtered.length === 0 && (
+              <div style={{ textAlign: "center", padding: "40px", color: "#888", fontWeight: 700 }}>
+                Aucune réservation trouvée.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
