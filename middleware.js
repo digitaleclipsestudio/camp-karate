@@ -8,7 +8,7 @@ export function middleware(request) {
 
     if (authHeader) {
       const encoded = authHeader.split(" ")[1];
-      const decoded = Buffer.from(encoded, "base64").toString("utf-8");
+      const decoded = atob(encoded);
       const [username, password] = decoded.split(":");
 
       if (
